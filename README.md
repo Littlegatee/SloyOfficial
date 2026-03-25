@@ -1,2 +1,3 @@
-# Welcome to Official Sloy Repository
+# Welcome to your Lovable project
 
+TODO: Document your project here
