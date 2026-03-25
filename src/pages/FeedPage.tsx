@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Image as ImageIcon, Send, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { toast } from "sonner";
 
 interface PostWithAuthor {
@@ -14,12 +14,15 @@ interface PostWithAuthor {
   likes_count: number;
   comments_count: number;
   created_at: string;
-  profiles: {
-    username: string;
-    first_name: string;
-    avatar_url: string | null;
+  user: {
+    profile: {
+      username: string;
+      first_name: string;
+      avatar_url: string | null;
+    };
   };
   liked_by_me: boolean;
+  likes: any[];
 }
 
 function timeAgo(dateStr: string) {
@@ -40,27 +43,19 @@ export default function FeedPage() {
   const [posting, setPosting] = useState(false);
 
   const fetchPosts = async () => {
-    const { data: postsData } = await supabase
-      .from("posts")
-      .select("*, profiles!posts_user_id_fkey(username, first_name, avatar_url)")
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (postsData && user) {
-      const { data: myLikes } = await supabase
-        .from("likes")
-        .select("post_id")
-        .eq("user_id", user.id);
-
-      const likedPostIds = new Set(myLikes?.map(l => l.post_id) || []);
-
-      setPosts(postsData.map((p: any) => ({
-        ...p,
-        profiles: p.profiles || { username: "unknown", first_name: "?", avatar_url: null },
-        liked_by_me: likedPostIds.has(p.id),
-      })));
+    try {
+      const { data } = await api.get("/posts");
+      if (data && user) {
+        setPosts(data.map((p: any) => ({
+          ...p,
+          liked_by_me: p.likes.some((l: any) => l.user_id === user.id),
+        })));
+      }
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -70,34 +65,30 @@ export default function FeedPage() {
   const handleCreatePost = async () => {
     if (!newPost.trim() || !user) return;
     setPosting(true);
-    const { error } = await supabase.from("posts").insert({
-      user_id: user.id,
-      content_text: newPost.trim(),
-    });
-    if (error) {
-      toast.error("Ошибка при создании поста");
-    } else {
+    try {
+      await api.post("/posts", { content_text: newPost.trim() });
       setNewPost("");
       await fetchPosts();
       toast.success("Пост опубликован!");
+    } catch (error) {
+      toast.error("Ошибка при создании поста");
+    } finally {
+      setPosting(false);
     }
-    setPosting(false);
   };
 
   const toggleLike = async (postId: string, liked: boolean) => {
     if (!user) return;
-    if (liked) {
-      await supabase.from("likes").delete().eq("post_id", postId).eq("user_id", user.id);
-      await supabase.from("posts").update({ likes_count: posts.find(p => p.id === postId)!.likes_count - 1 }).eq("id", postId);
-    } else {
-      await supabase.from("likes").insert({ post_id: postId, user_id: user.id });
-      await supabase.from("posts").update({ likes_count: posts.find(p => p.id === postId)!.likes_count + 1 }).eq("id", postId);
+    try {
+      await api.post(`/posts/${postId}/like`);
+      setPosts(posts.map(p =>
+        p.id === postId
+          ? { ...p, liked_by_me: !liked, likes_count: liked ? p.likes_count - 1 : p.likes_count + 1 }
+          : p
+      ));
+    } catch (error) {
+      toast.error("Ошибка при выполнении действия");
     }
-    setPosts(posts.map(p =>
-      p.id === postId
-        ? { ...p, liked_by_me: !liked, likes_count: liked ? p.likes_count - 1 : p.likes_count + 1 }
-        : p
-    ));
   };
 
   return (
@@ -149,11 +140,11 @@ export default function FeedPage() {
             <div key={post.id} className="glass rounded-3xl p-5 transition-all hover:shadow-lg">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm">
-                  {post.profiles.first_name.charAt(0)}
+                  {post.user.profile.first_name.charAt(0)}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">{post.profiles.first_name}</p>
-                  <p className="text-[11px] text-muted-foreground">@{post.profiles.username} · {timeAgo(post.created_at)}</p>
+                  <p className="text-sm font-semibold">{post.user.profile.first_name}</p>
+                  <p className="text-[11px] text-muted-foreground">@{post.user.profile.username} · {timeAgo(post.created_at)}</p>
                 </div>
               </div>
 

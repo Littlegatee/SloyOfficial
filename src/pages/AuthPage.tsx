@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Send } from "lucide-react";
+import { toast } from "sonner";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,38 +18,11 @@ export default function AuthPage() {
 
   // Handle Telegram auth callback
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tgData = params.get("tg_auth");
-    if (tgData) {
-      handleTelegramAuth(JSON.parse(decodeURIComponent(tgData)));
-    }
+    // Telegram auth needs to be re-implemented for custom backend
   }, []);
 
   const handleTelegramAuth = async (tgUser: any) => {
-    setLoading(true);
-    setError("");
-    try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/telegram-auth`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(tgUser),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Ошибка Telegram авторизации");
-      // Auto-login with returned credentials
-      if (data.email && data.password) {
-        await login(data.email, data.password);
-        navigate("/feed");
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    toast.error("Telegram auth is temporarily disabled");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +31,7 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (isLogin) {
-        await login(email || username, password);
+        await login(email, password);
       } else {
         if (!username || !email || !password || !firstName) {
           setError("Заполните все обязательные поля");
@@ -68,11 +42,12 @@ export default function AuthPage() {
       }
       navigate("/feed");
     } catch (err: any) {
-      setError(err.message || "Ошибка авторизации");
+      setError(err.response?.data?.error || "Ошибка авторизации");
     } finally {
       setLoading(false);
     }
   };
+
 
   const openTelegramLogin = () => {
     // Open Telegram login in popup - requires bot setup
@@ -95,10 +70,10 @@ export default function AuthPage() {
         {/* Logo */}
         <div className="text-center mb-10">
           <h1 className="text-6xl font-black tracking-tight mb-3">
-            <span className="text-gradient">СЛОЙ</span>
+            <span className="logo-animated">СЛОЙ</span>
           </h1>
           <p className="text-muted-foreground text-sm">
-            {isLogin ? "Войдите, чтобы продолжить" : "Создайте аккаунт"}
+            {isLogin ? "С возвращением! Мы скучали." : "Добро пожаловать в наше пространство!"}
           </p>
         </div>
 

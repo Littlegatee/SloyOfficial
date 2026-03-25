@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { Send, ArrowLeft, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
+import { socket } from "@/lib/socket";
 
 interface Dialog {
   userId: string;
@@ -16,6 +17,7 @@ interface Dialog {
 interface ChatMessage {
   id: string;
   sender_id: string;
+  recipient_id: string;
   content_text: string;
   created_at: string;
 }
@@ -32,40 +34,19 @@ export default function MessagesPage() {
 
   const fetchDialogs = async () => {
     if (!user) return;
-    const { data: msgs } = await supabase
-      .from("messages")
-      .select("*")
-      .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
-      .order("created_at", { ascending: false });
-
-    if (msgs) {
-      const dialogMap: Record<string, Dialog> = {};
-      for (const msg of msgs) {
-        const otherId = msg.sender_id === user.id ? msg.recipient_id : msg.sender_id;
-        if (!dialogMap[otherId]) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("username, first_name")
-            .eq("user_id", otherId)
-            .single();
-
-          const unreadCount = msgs.filter(m =>
-            m.sender_id === otherId && m.recipient_id === user.id && !m.is_read
-          ).length;
-
-          dialogMap[otherId] = {
-            userId: otherId,
-            username: profile?.username || "?",
-            first_name: profile?.first_name || "?",
-            lastMessage: msg.content_text,
-            unreadCount,
-            time: new Date(msg.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
-          };
-        }
+    try {
+      const { data } = await api.get("/messages/dialogs");
+      if (data) {
+        setDialogs(data.map((d: any) => ({
+          ...d,
+          time: new Date(d.time).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+        })));
       }
-      setDialogs(Object.values(dialogMap));
+    } catch (error) {
+      console.error("Error fetching dialogs:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -77,36 +58,30 @@ export default function MessagesPage() {
     setSelectedName(name);
     if (!user) return;
 
-    // Mark as read
-    await supabase.from("messages")
-      .update({ is_read: true })
-      .eq("sender_id", userId)
-      .eq("recipient_id", user.id)
-      .eq("is_read", false);
-
-    // Fetch messages
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .or(`and(sender_id.eq.${user.id},recipient_id.eq.${userId}),and(sender_id.eq.${userId},recipient_id.eq.${user.id})`)
-      .order("created_at", { ascending: true });
-
-    setMessages(data || []);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      const { data } = await api.get(`/messages/${userId}`);
+      setMessages(data || []);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      fetchDialogs(); // Refresh to clear unread counts
+    } catch (error) {
+      console.error("Error opening chat:", error);
+    }
   };
 
   const sendMessage = async () => {
     if (!messageText.trim() || !user || !selectedUserId) return;
-    const { data, error } = await supabase.from("messages").insert({
-      sender_id: user.id,
-      recipient_id: selectedUserId,
-      content_text: messageText.trim(),
-    }).select().single();
-
-    if (!error && data) {
-      setMessages([...messages, data]);
-      setMessageText("");
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    try {
+      const { data } = await api.post("/messages", {
+        recipient_id: selectedUserId,
+        content_text: messageText.trim(),
+      });
+      if (data) {
+        setMessages(prev => [...prev, data]);
+        setMessageText("");
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
     }
   };
 
@@ -114,21 +89,19 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!user || !selectedUserId) return;
 
-    const channel = supabase.channel("messages")
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-        filter: `recipient_id=eq.${user.id}`,
-      }, (payload) => {
-        if (payload.new && (payload.new as any).sender_id === selectedUserId) {
-          setMessages(prev => [...prev, payload.new as ChatMessage]);
-          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-        }
-      })
-      .subscribe();
+    const handleReceiveMessage = (msg: ChatMessage) => {
+      if (msg.sender_id === selectedUserId || msg.recipient_id === selectedUserId) {
+        setMessages(prev => [...prev, msg]);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+      }
+      fetchDialogs();
+    };
 
-    return () => { supabase.removeChannel(channel); };
+    socket.on('receive_message', handleReceiveMessage);
+
+    return () => {
+      socket.off('receive_message', handleReceiveMessage);
+    };
   }, [user, selectedUserId]);
 
   return (

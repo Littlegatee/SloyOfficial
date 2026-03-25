@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Save, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
@@ -17,22 +17,23 @@ export default function SettingsPage() {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    const { error } = await supabase.from("profiles").update({
-      first_name: firstName,
-      last_name: lastName,
-      status,
-      city,
-      birth_date: birthDate,
-    }).eq("user_id", user.id);
-
-    if (error) {
-      toast.error("Ошибка при сохранении");
-    } else {
+    try {
+      await api.put(`/profiles/${user.id}`, {
+        first_name: firstName,
+        last_name: lastName,
+        status,
+        city,
+        birth_date: birthDate,
+      });
       await refreshProfile();
       toast.success("Настройки сохранены!");
+    } catch (error) {
+      toast.error("Ошибка при сохранении");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
+
 
   const toggleTheme = (dark: boolean) => {
     document.documentElement.classList.toggle("dark", dark);

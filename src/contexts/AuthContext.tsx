@@ -1,6 +1,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
+import api from "@/lib/api";
+import { socket } from "@/lib/socket";
+
+export interface User {
+  id: string;
+  email: string;
+}
 
 export interface Profile {
   id: string;
@@ -19,7 +24,7 @@ export interface Profile {
 }
 
 interface AuthContextType {
-  user: SupabaseUser | null;
+  user: User | null;
   profile: Profile | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
@@ -45,17 +50,17 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-    if (data) setProfile(data as Profile);
+    try {
+      const { data } = await api.get(`/profiles/${userId}`);
+      if (data) setProfile(data as Profile);
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+    }
   };
 
   const refreshProfile = async () => {
@@ -63,54 +68,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          // Use setTimeout to avoid Supabase client deadlock
-          setTimeout(() => fetchProfile(session.user.id), 0);
-        } else {
-          setProfile(null);
-        }
-        setIsLoading(false);
-      }
-    );
+    const token = localStorage.getItem("token");
+    const storedUser = localStorage.getItem("user");
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
-      setIsLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    if (token && storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+      fetchProfile(parsedUser.id);
+      socket.connect();
+      socket.emit("join", parsedUser.id);
+    }
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    const { data } = await api.post("/auth/login", { email, password });
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
+    setUser(data.user);
+    setProfile(data.user.profile);
+    socket.connect();
+    socket.emit("join", data.user.id);
   };
 
   const register = async (data: RegisterData) => {
-    const { error } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: {
-        data: {
-          username: data.username,
-          first_name: data.first_name,
-          last_name: data.last_name || "",
-        },
-      },
-    });
-    if (error) throw error;
+    const { data: result } = await api.post("/auth/register", data);
+    localStorage.setItem("token", result.token);
+    localStorage.setItem("user", JSON.stringify(result.user));
+    setUser(result.user);
+    setProfile(result.user.profile);
+    socket.connect();
+    socket.emit("join", result.user.id);
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setUser(null);
     setProfile(null);
+    socket.disconnect();
   };
 
   return (
@@ -119,3 +115,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
+

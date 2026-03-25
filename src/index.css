@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @layer base {
   :root {
@@ -155,6 +155,23 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+
+  /* Animated logo with image background */
+  .logo-animated {
+    background-image: url('/logo-bg.jpg');
+    background-size: 140% 280%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: wave-bg 15s ease-in-out infinite;
+    display: inline-block;
+  }
+
+  @keyframes wave-bg {
+    0% { background-position: 50% 50%; }
+    50% { background-position: 50% 0%; }
+    100% { background-position: 50% 50%; }
   }
 
   /* Subtle gradient background */

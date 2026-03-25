@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Search, UserPlus, UserCheck, UserX, Clock, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { toast } from "sonner";
 
 interface FriendItem {
@@ -24,33 +24,14 @@ export default function FriendsPage() {
 
   const fetchFriends = async () => {
     if (!user) return;
-
-    const { data: friendships } = await supabase
-      .from("friendships")
-      .select("*")
-      .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
-
-    if (friendships) {
-      const items: FriendItem[] = [];
-      for (const f of friendships) {
-        const otherId = f.user_id === user.id ? f.friend_id : f.user_id;
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, first_name, avatar_url")
-          .eq("user_id", otherId)
-          .single();
-        items.push({
-          id: f.id,
-          user_id: f.user_id,
-          friend_id: f.friend_id,
-          status: f.status || "pending",
-          friend_profile: profile || { username: "unknown", first_name: "?", avatar_url: null },
-          direction: f.user_id === user.id ? "sent" : "received",
-        });
-      }
-      setFriends(items);
+    try {
+      const { data } = await api.get("/friends");
+      setFriends(data || []);
+    } catch (error) {
+      console.error("Error fetching friends:", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -63,40 +44,43 @@ export default function FriendsPage() {
       setSearchResults([]);
       return;
     }
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .neq("user_id", user?.id)
-      .or(`username.ilike.%${q}%,first_name.ilike.%${q}%`)
-      .limit(10);
-    setSearchResults(data || []);
+    try {
+      const { data } = await api.get(`/profiles?q=${q}`);
+      setSearchResults(data || []);
+    } catch (error) {}
   };
 
   const sendRequest = async (friendUserId: string) => {
     if (!user) return;
-    const { error } = await supabase.from("friendships").insert({
-      user_id: user.id,
-      friend_id: friendUserId,
-    });
-    if (error) {
-      toast.error("Ошибка при отправке заявки");
-    } else {
+    try {
+      await api.post("/friends", { friendUserId });
       toast.success("Заявка отправлена!");
       fetchFriends();
+    } catch (error) {
+      toast.error("Ошибка при отправке заявки");
     }
   };
 
   const acceptFriend = async (id: string) => {
-    await supabase.from("friendships").update({ status: "accepted" }).eq("id", id);
-    toast.success("Заявка принята!");
-    fetchFriends();
+    try {
+      await api.put(`/friends/${id}/accept`);
+      toast.success("Заявка принята!");
+      fetchFriends();
+    } catch (error) {
+      toast.error("Ошибка при принятии заявки");
+    }
   };
 
   const removeFriend = async (id: string) => {
-    await supabase.from("friendships").delete().eq("id", id);
-    toast.success("Удалено");
-    fetchFriends();
+    try {
+      await api.delete(`/friends/${id}`);
+      toast.success("Удалено");
+      fetchFriends();
+    } catch (error) {
+      toast.error("Ошибка при удалении");
+    }
   };
+
 
   const filtered = friends.filter(f => {
     const matchSearch = f.friend_profile.first_name.toLowerCase().includes(search.toLowerCase()) ||

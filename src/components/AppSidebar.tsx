@@ -42,7 +42,7 @@ export default function AppSidebar() {
       {/* Logo */}
       <div className="p-6 pb-4">
         <h1 className="text-2xl font-black tracking-tight">
-          <span className="text-gradient">СЛОЙ</span>
+          <span className="logo-animated">СЛОЙ</span>
         </h1>
         <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-0.5 font-medium">social platform</p>
       </div>

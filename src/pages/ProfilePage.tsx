@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { MapPin, Calendar, Edit2, Camera, Loader2 } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 
 export default function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -12,16 +12,15 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (user) {
-      supabase.from("posts")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
+      api.get("/posts") // In a real app, you'd have a /posts/user/:id endpoint
         .then(({ data }) => {
-          setMyPosts(data || []);
+          setMyPosts(data.filter((p: any) => p.user_id === user.id) || []);
           setLoading(false);
-        });
+        })
+        .catch(() => setLoading(false));
     }
   }, [user]);
+
 
   const tabs = [
     { id: "posts" as const, label: "Посты", count: myPosts.length },
