@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-    <title>Telegram Stars Store | Premium Shop</title>
-    <!-- Font Awesome 6 (Free Icons) -->
+    <title>Telegram Stars Store | SLOYBOT</title>
+    <!-- Font Awesome 6 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         * {
@@ -14,7 +14,7 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Telegram style variables (light mode base) */
+        /* Телеграм‑стиль (светлая тема) */
         :root {
             --tg-bg: #ffffff;
             --tg-surface: #f0f0f0;
@@ -32,7 +32,7 @@
             --tg-star-glow: #ffb800;
         }
 
-        /* Dark mode (respects system, like Telegram) */
+        /* Тёмная тема (системная) */
         @media (prefers-color-scheme: dark) {
             :root {
                 --tg-bg: #0f0f0f;
@@ -47,21 +47,54 @@
         }
 
         body {
-            background-color: var(--tg-bg);
+            background: #e2e2e6;  /* Фон как у рабочего стола */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             color: var(--tg-text);
             line-height: 1.4;
-            padding: 0 0 32px 0;
+            padding: 24px;
         }
 
-        /* Main container */
+        /* Контейнер‑виджет — компактное окошко на ПК */
+        .widget {
+            max-width: 520px;
+            width: 100%;
+            background: var(--tg-bg);
+            border-radius: 28px;
+            box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+            transition: all 0.2s ease;
+        }
+
+        /* Внутренняя область с прокруткой */
+        .store-scroll {
+            max-height: 85vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        /* Стилизация скроллбара (для WebKit) */
+        .store-scroll::-webkit-scrollbar {
+            width: 5px;
+        }
+        .store-scroll::-webkit-scrollbar-track {
+            background: var(--tg-surface);
+            border-radius: 10px;
+        }
+        .store-scroll::-webkit-scrollbar-thumb {
+            background: var(--tg-text-secondary);
+            border-radius: 10px;
+        }
+
+        /* Основной контент */
         .store-container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 0 16px;
+            padding: 0 16px 24px 16px;
         }
 
-        /* Header style (like Telegram channel header) */
+        /* Шапка (стикер) */
         .store-header {
             position: sticky;
             top: 0;
@@ -71,11 +104,10 @@
             border-bottom: 0.5px solid var(--tg-border);
             padding: 12px 0;
             z-index: 10;
-            margin-bottom: 20px;
         }
 
         .header-content {
-            max-width: 600px;
+            max-width: 520px;
             margin: 0 auto;
             padding: 0 16px;
             display: flex;
@@ -146,7 +178,7 @@
             margin-left: 8px;
         }
 
-        /* section title */
+        /* Заголовки секций */
         .section-title {
             display: flex;
             align-items: baseline;
@@ -154,18 +186,18 @@
             margin: 28px 0 16px 0;
         }
         .section-title h2 {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 8px;
         }
         .section-title span {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--tg-text-secondary);
         }
 
-        /* card grid */
+        /* Карточки товаров */
         .cards-grid {
             display: flex;
             flex-direction: column;
@@ -176,7 +208,7 @@
             background: var(--tg-card);
             border-radius: 18px;
             border: 0.5px solid var(--tg-border);
-            padding: 16px;
+            padding: 14px;
             transition: transform 0.1s ease, box-shadow 0.2s;
             box-shadow: 0 2px 6px var(--tg-shadow);
             display: flex;
@@ -188,7 +220,7 @@
 
         .product-card:hover {
             transform: scale(1.01);
-            box-shadow: 0 4px 12px var(--tg-shadow);
+            box-shadow: 0 6px 14px var(--tg-shadow);
         }
 
         .product-info {
@@ -210,7 +242,7 @@
             transition: all 0.2s;
         }
 
-        /* Улучшенные иконки: градиент для звезд */
+        /* Улучшенные иконки */
         .stars-icon {
             background: linear-gradient(135deg, #ffb347, #ffcc33);
             background-clip: text;
@@ -218,16 +250,9 @@
             color: transparent;
             text-shadow: 0 0 8px rgba(255, 200, 0, 0.3);
         }
-        
-        .premium-icon-gold {
-            background: linear-gradient(135deg, #e6b422, #f5b042);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-        }
 
         .product-details h3 {
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 600;
             margin-bottom: 4px;
             display: flex;
@@ -237,7 +262,7 @@
         }
 
         .product-details .price {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--tg-text-secondary);
             display: flex;
             align-items: center;
@@ -257,10 +282,10 @@
         .btn {
             border: none;
             background: var(--tg-primary);
-            padding: 10px 20px;
+            padding: 8px 18px;
             border-radius: 40px;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: white;
             display: flex;
             align-items: center;
@@ -285,11 +310,6 @@
             opacity: 0.9;
         }
 
-        .btn-sm {
-            padding: 8px 18px;
-            font-size: 0.85rem;
-        }
-
         .premium-badge {
             background: var(--tg-premium-badge);
             padding: 4px 12px;
@@ -303,22 +323,14 @@
         }
 
         .status-badge {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             background: var(--tg-surface);
-            padding: 4px 10px;
+            padding: 3px 8px;
             border-radius: 20px;
             color: var(--tg-text-secondary);
-            margin-left: 10px;
         }
 
-        hr {
-            margin: 20px 0;
-            border: none;
-            height: 0.5px;
-            background: var(--tg-border);
-        }
-
-        /* Modal (Telegram style) */
+        /* Модалка (телеграм‑стиль) */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -344,7 +356,7 @@
         .modal {
             background: var(--tg-card);
             border-radius: 28px;
-            max-width: 320px;
+            max-width: 300px;
             width: 85%;
             padding: 24px 20px 20px;
             text-align: center;
@@ -353,13 +365,14 @@
         }
 
         .modal h3 {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             margin-bottom: 12px;
         }
 
         .modal p {
             color: var(--tg-text-secondary);
             margin-bottom: 24px;
+            font-size: 0.9rem;
         }
 
         .modal-buttons {
@@ -385,7 +398,7 @@
             color: var(--tg-text);
         }
 
-        /* Toast notification */
+        /* Тосты */
         .toast {
             position: fixed;
             bottom: 30px;
@@ -393,10 +406,10 @@
             transform: translateX(-50%) scale(0.9);
             background: var(--tg-text);
             color: var(--tg-bg);
-            padding: 12px 20px;
+            padding: 10px 18px;
             border-radius: 40px;
             font-weight: 500;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             z-index: 1100;
             opacity: 0;
             transition: 0.2s;
@@ -412,15 +425,27 @@
 
         footer {
             text-align: center;
-            margin-top: 40px;
-            font-size: 0.7rem;
+            margin-top: 28px;
+            font-size: 0.65rem;
             color: var(--tg-text-secondary);
-            padding: 16px;
+            padding: 12px;
         }
 
-        @media (max-width: 480px) {
-            .store-container {
-                padding: 0 12px;
+        /* Адаптация под мобильные (на всю ширину) */
+        @media (max-width: 560px) {
+            body {
+                padding: 0;
+                background: var(--tg-bg);
+                align-items: flex-start;
+            }
+            .widget {
+                max-width: 100%;
+                border-radius: 0;
+                box-shadow: none;
+            }
+            .store-scroll {
+                max-height: none;
+                overflow-y: visible;
             }
             .product-card {
                 flex-direction: column;
@@ -433,61 +458,58 @@
                 width: 100%;
                 justify-content: center;
             }
-            .balance-card {
-                padding: 5px 12px;
-            }
-            .logo-text h1 {
-                font-size: 1.1rem;
-            }
         }
     </style>
 </head>
 <body>
-
-<div class="store-header">
-    <div class="header-content">
-        <div class="logo-area">
-            <div class="telegram-icon"><i class="fab fa-telegram-plane"></i></div>
-            <div class="logo-text">
-                <h1>Stars Store</h1>
-                <p>by Telegram</p>
+<div class="widget">
+    <div class="store-scroll">
+        <div class="store-header">
+            <div class="header-content">
+                <div class="logo-area">
+                    <div class="telegram-icon"><i class="fab fa-telegram-plane"></i></div>
+                    <div class="logo-text">
+                        <h1>Stars Store</h1>
+                        <p>SLOYBOT</p>
+                    </div>
+                </div>
+                <div class="balance-card" id="balanceWrapper">
+                    <i class="fas fa-star"></i>
+                    <span class="balance-amount" id="starsBalance">0</span>
+                    <span id="premiumHeaderBadge"></span>
+                </div>
             </div>
         </div>
-        <div class="balance-card" id="balanceWrapper">
-            <i class="fas fa-star"></i>
-            <span class="balance-amount" id="starsBalance">0</span>
-            <span id="premiumHeaderBadge"></span>
+
+        <div class="store-container">
+            <!-- Блок покупки Stars (реальные цены в рублях) -->
+            <div class="section-title">
+                <h2><i class="fas fa-star" style="color:#f5b342;"></i> Telegram Stars</h2>
+                <span>внутренняя валюта</span>
+            </div>
+            <div class="cards-grid" id="starsPackages"></div>
+
+            <!-- Блок Premium (покупка за Stars) -->
+            <div class="section-title" style="margin-top: 28px;">
+                <h2><i class="fas fa-crown" style="color:var(--tg-primary);"></i> Telegram Premium</h2>
+                <span>купи за Stars</span>
+            </div>
+            <div class="cards-grid" id="premiumPlans"></div>
+
+            <!-- Статус Premium -->
+            <div id="premiumStatusCard" style="margin-top: 18px;"></div>
+
+            <footer>
+                <i class="fab fa-telegram"></i> • Безопасные платежи • Stars не возвращаются • Демо
+            </footer>
         </div>
     </div>
 </div>
 
-<div class="store-container">
-    <!-- Stars section: buy stars for real money (цены в рублях, реальные из Telegram) -->
-    <div class="section-title">
-        <h2><i class="fas fa-star" style="color:#f5b342;"></i> Telegram Stars</h2>
-        <span>Внутренняя валюта</span>
-    </div>
-    <div class="cards-grid" id="starsPackages"></div>
-
-    <!-- Premium section (purchase with Stars) -->
-    <div class="section-title" style="margin-top: 32px;">
-        <h2><i class="fas fa-crown" style="color:var(--tg-primary);"></i> Telegram Premium</h2>
-        <span>Купи за Stars</span>
-    </div>
-    <div class="cards-grid" id="premiumPlans"></div>
-
-    <!-- Active Premium status indicator -->
-    <div id="premiumStatusCard" style="margin-top: 20px;"></div>
-
-    <footer>
-        <i class="fab fa-telegram"></i> • Безопасные платежи • Stars не возвращаются • Демо-магазин
-    </footer>
-</div>
-
-<!-- Modal -->
+<!-- Модалка -->
 <div id="confirmModal" class="modal-overlay">
     <div class="modal">
-        <h3 id="modalTitle">Подтверждение покупки</h3>
+        <h3 id="modalTitle">Подтверждение</h3>
         <p id="modalMessage">Вы уверены, что хотите совершить покупку?</p>
         <div class="modal-buttons">
             <button class="cancel-btn" id="modalCancel">Отмена</button>
@@ -499,84 +521,38 @@
 <div id="toastMsg" class="toast"></div>
 
 <script>
-    // ---------- ДАННЫЕ С РЕАЛЬНЫМИ ЦЕНАМИ В РУБЛЯХ (из Telegram) ----------
-    // Пакеты Stars (реальные цены в рублях, соответствуют внутренним покупкам Telegram)
+    // ----- РЕАЛЬНЫЕ ЦЕНЫ В РУБЛЯХ (данные из Telegram) -----
     const starsPackagesData = [
-        { stars: 100, priceRUB: 149, icon: "fa-star", label: "100 Stars", iconStyle: "star", color: "#ffcc44" },
-        { stars: 500, priceRUB: 749, icon: "fa-star-half-alt", label: "500 Stars", iconStyle: "star-half", color: "#ffcc44" },
-        { stars: 1000, priceRUB: 1499, icon: "fa-star-of-life", label: "1000 Stars", iconStyle: "star-life", color: "#ffaa33" },
-        { stars: 5000, priceRUB: 7499, icon: "fa-gem", label: "5000 Stars (+Бонус)", iconStyle: "gem", color: "#f0a3c0" }
+        { stars: 100, priceRUB: 149, icon: "fa-star", label: "100 Stars", iconColor: "#ffcc44" },
+        { stars: 500, priceRUB: 749, icon: "fa-star-half-alt", label: "500 Stars", iconColor: "#ffcc44" },
+        { stars: 1000, priceRUB: 1499, icon: "fa-star-of-life", label: "1000 Stars", iconColor: "#ffaa33" },
+        { stars: 5000, priceRUB: 7499, icon: "fa-gem", label: "5000 Stars + бонус", iconColor: "#f0a3c0" }
     ];
 
-    // Premium планы (стоимость в Stars, реальные цены в звездах из Telegram Premium)
     const premiumPlansData = [
-        { months: 1, starsCost: 1000, title: "1 месяц Premium", discount: "", icon: "fa-crown", features: "Без рекламы, эксклюзивные стикеры", iconColor: "#f5b342" },
+        { months: 1, starsCost: 1000, title: "1 месяц Premium", discount: "", icon: "fa-crown", features: "Без рекламы, стикеры", iconColor: "#f5b342" },
         { months: 6, starsCost: 5000, title: "6 месяцев Premium", discount: "Экономия 500★", icon: "fa-calendar-alt", features: "Выгодный тариф", iconColor: "#e89c2e" },
         { months: 12, starsCost: 9000, title: "12 месяцев Premium", discount: "Экономия 1500★", icon: "fa-infinity", features: "Доступ на год", iconColor: "#d97706" }
     ];
 
-    // Состояние приложения
-    let userStars = 0;          // баланс звезд
+    let userStars = 0;
     let isPremiumActive = false;
 
-    // DOM элементы
     const starsBalanceSpan = document.getElementById('starsBalance');
     const premiumHeaderBadge = document.getElementById('premiumHeaderBadge');
     const premiumStatusDiv = document.getElementById('premiumStatusCard');
     const starsContainer = document.getElementById('starsPackages');
     const premiumContainer = document.getElementById('premiumPlans');
 
-    // Модальное окно
-    let pendingAction = null;    // { type: 'buyStars', starsAmount, priceRUB } или { type: 'buyPremium', planIndex, months, starsCost }
-
-    // Helper: обновление UI (баланс, премиум бейдж, статус-карта)
-    function updateUI() {
-        starsBalanceSpan.innerText = userStars;
-
-        // Премиум бейдж в хедере
-        if (isPremiumActive) {
-            premiumHeaderBadge.innerHTML = '<div class="premium-badge-header"><i class="fas fa-bolt"></i> Premium</div>';
-        } else {
-            premiumHeaderBadge.innerHTML = '';
-        }
-
-        // Карточка статуса премиума и отображение кнопок
-        if (isPremiumActive) {
-            premiumStatusDiv.innerHTML = `
-                <div style="background: var(--tg-surface); border-radius: 24px; padding: 16px; border: 0.5px solid var(--tg-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <div style="background: var(--tg-premium-badge); width: 44px; height: 44px; border-radius: 30px; display: flex; align-items: center; justify-content: center;"><i class="fas fa-check-circle" style="color: white; font-size: 24px;"></i></div>
-                        <div><strong style="font-size: 1rem;">✨ Premium Активен</strong><br><span style="font-size: 0.75rem; color: var(--tg-text-secondary);">Все функции разблокированы</span></div>
-                    </div>
-                    <span class="premium-badge"><i class="fas fa-infinity"></i> Активен</span>
-                </div>
-            `;
-        } else {
-            premiumStatusDiv.innerHTML = `
-                <div style="background: var(--tg-surface); border-radius: 24px; padding: 14px; text-align: center; border: 0.5px solid var(--tg-border);">
-                    <i class="fas fa-lock" style="color: var(--tg-text-secondary); margin-right: 8px;"></i> 
-                    <span style="color: var(--tg-text-secondary);">Нет активной подписки. Купите Premium за Stars и наслаждайтесь!</span>
-                </div>
-            `;
-        }
-
-        // Перерендерим премиум планы, чтобы обновить доступность кнопок
-        renderPremiumPlans();
-    }
-
-    // Показ уведомления
-    function showToast(message, isError = false) {
+    function showToast(msg, isError = false) {
         const toast = document.getElementById('toastMsg');
-        toast.innerText = message;
+        toast.innerText = msg;
         toast.style.background = isError ? 'var(--tg-red)' : 'var(--tg-text)';
         toast.style.color = '#ffffff';
         toast.classList.add('show');
-        setTimeout(() => {
-            toast.classList.remove('show');
-        }, 2600);
+        setTimeout(() => toast.classList.remove('show'), 2600);
     }
 
-    // Модалка
     function openModal(title, message, onConfirm) {
         const modal = document.getElementById('confirmModal');
         document.getElementById('modalTitle').innerText = title;
@@ -590,110 +566,120 @@
             modal.classList.remove('active');
             confirmBtn.removeEventListener('click', confirmHandler);
             cancelBtn.removeEventListener('click', cancelHandler);
-            pendingAction = null;
         };
 
         const confirmHandler = () => {
             closeModal();
             onConfirm();
         };
-        const cancelHandler = () => {
-            closeModal();
-        };
+        const cancelHandler = closeModal;
 
         confirmBtn.addEventListener('click', confirmHandler, { once: true });
         cancelBtn.addEventListener('click', cancelHandler, { once: true });
     }
 
-    // Покупка Stars (увеличиваем баланс)
-    function performBuyStars(starsAmount, priceRUB) {
-        // Имитация успешного платежа
-        userStars += starsAmount;
-        updateUI();
-        showToast(`✓ Успешно! +${starsAmount} Stars добавлено на баланс.`, false);
-        renderPremiumPlans(); // обновляем доступность премиум кнопок
+    function updateUI() {
+        starsBalanceSpan.innerText = userStars;
+        if (isPremiumActive) {
+            premiumHeaderBadge.innerHTML = '<div class="premium-badge-header"><i class="fas fa-bolt"></i> Premium</div>';
+        } else {
+            premiumHeaderBadge.innerHTML = '';
+        }
+
+        if (isPremiumActive) {
+            premiumStatusDiv.innerHTML = `
+                <div style="background: var(--tg-surface); border-radius: 24px; padding: 14px; border: 0.5px solid var(--tg-border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div style="background: var(--tg-premium-badge); width: 40px; height: 40px; border-radius: 30px; display: flex; align-items: center; justify-content: center;"><i class="fas fa-check-circle" style="color: white; font-size: 22px;"></i></div>
+                        <div><strong style="font-size: 0.95rem;">✨ Premium активен</strong><br><span style="font-size: 0.7rem;">Все функции разблокированы</span></div>
+                    </div>
+                    <span class="premium-badge"><i class="fas fa-infinity"></i> Активен</span>
+                </div>
+            `;
+        } else {
+            premiumStatusDiv.innerHTML = `
+                <div style="background: var(--tg-surface); border-radius: 24px; padding: 12px; text-align: center; border: 0.5px solid var(--tg-border);">
+                    <i class="fas fa-lock" style="color: var(--tg-text-secondary); margin-right: 6px;"></i> 
+                    <span style="font-size: 0.85rem;">Нет активной подписки. Купите Premium за Stars!</span>
+                </div>
+            `;
+        }
+        renderPremiumPlans();
     }
 
-    // Покупка Premium (трата Stars)
-    function performBuyPremium(months, starsCost, planTitle) {
+    function performBuyStars(starsAmount) {
+        userStars += starsAmount;
+        updateUI();
+        showToast(`✓ +${starsAmount} Stars добавлено на баланс`, false);
+    }
+
+    function performBuyPremium(months, starsCost, titlePlan) {
         if (isPremiumActive) {
-            showToast(`❌ У вас уже активен Telegram Premium!`, true);
+            showToast(`❌ Premium уже активен`, true);
             return false;
         }
         if (userStars < starsCost) {
-            showToast(`❌ Недостаточно Stars. Нужно ${starsCost} Stars. Пополните баланс!`, true);
+            showToast(`❌ Не хватает Stars (нужно ${starsCost} ★)`, true);
             return false;
         }
         userStars -= starsCost;
         isPremiumActive = true;
         updateUI();
-        showToast(`🎉 Premium активирован! ${months} месяц(ев) Telegram Premium. Добро пожаловать в клуб!`, false);
-        renderPremiumPlans();
+        showToast(`🎉 Premium активирован на ${months} месяц(ев)!`, false);
         return true;
     }
 
-    // Отрисовка пакетов Stars (цены в рублях)
     function renderStarsPackages() {
         starsContainer.innerHTML = '';
         starsPackagesData.forEach(pkg => {
-            // Выбираем иконку с улучшенным стилем в зависимости от пакета
-            let iconHtml = `<i class="fas ${pkg.icon}" style="color: ${pkg.color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></i>`;
-            if (pkg.stars === 5000) iconHtml = `<i class="fas fa-gem" style="color: #ff99cc; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></i>`;
-            if (pkg.stars === 1000) iconHtml = `<i class="fas fa-star-of-life" style="color: #ffaa44; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></i>`;
-            
+            const iconHtml = `<i class="fas ${pkg.icon}" style="color: ${pkg.iconColor}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"></i>`;
             const card = document.createElement('div');
             card.className = 'product-card';
             card.innerHTML = `
                 <div class="product-info">
-                    <div class="product-icon">
-                        ${iconHtml}
-                    </div>
+                    <div class="product-icon">${iconHtml}</div>
                     <div class="product-details">
                         <h3>${pkg.label}</h3>
                         <div class="price"><i class="fas fa-ruble-sign"></i> <strong>${pkg.priceRUB} ₽</strong> · ${pkg.stars} Stars</div>
                     </div>
                 </div>
                 <div class="product-action">
-                    <button class="btn btn-sm" data-stars="${pkg.stars}" data-price="${pkg.priceRUB}" data-label="${pkg.label}">
+                    <button class="btn btn-sm" data-stars="${pkg.stars}" data-price="${pkg.priceRUB}">
                         <i class="fas fa-cart-shopping"></i> Купить
                     </button>
                 </div>
             `;
-            const buyBtn = card.querySelector('button');
-            buyBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const starsAmt = parseInt(buyBtn.dataset.stars);
-                const priceRubVal = parseFloat(buyBtn.dataset.price);
+            const btn = card.querySelector('button');
+            btn.addEventListener('click', () => {
+                const starsAmt = parseInt(btn.dataset.stars);
+                const rub = parseFloat(btn.dataset.price);
                 openModal(
                     "Покупка Stars",
-                    `Вы покупаете <strong>${starsAmt} Stars</strong> за <strong>${priceRubVal} ₽</strong>.<br><small style="color: var(--tg-text-secondary);">Демо-оплата, баланс пополнится мгновенно</small>`,
-                    () => {
-                        performBuyStars(starsAmt, priceRubVal);
-                    }
+                    `Купить <strong>${starsAmt} Stars</strong> за <strong>${rub} ₽</strong>?<br><small>Демо-платёж, баланс пополнится сразу</small>`,
+                    () => performBuyStars(starsAmt)
                 );
             });
             starsContainer.appendChild(card);
         });
     }
 
-    // Отрисовка Premium планов с динамической блокировкой (если недостаточно Stars или уже активен премиум)
     function renderPremiumPlans() {
         premiumContainer.innerHTML = '';
-        premiumPlansData.forEach((plan, idx) => {
+        premiumPlansData.forEach(plan => {
             const enoughStars = userStars >= plan.starsCost && !isPremiumActive;
-            const buttonDisabled = isPremiumActive || !enoughStars;
-            let buttonText = "";
-            if (isPremiumActive) buttonText = "Уже активирован";
-            else if (enoughStars) buttonText = `Купить за ${plan.starsCost} ★`;
-            else buttonText = `Нужно ещё ${plan.starsCost - userStars} ★`;
+            const disabled = isPremiumActive || !enoughStars;
+            let btnText = "";
+            if (isPremiumActive) btnText = "Уже активирован";
+            else if (enoughStars) btnText = `Купить за ${plan.starsCost} ★`;
+            else btnText = `Нужно ещё ${plan.starsCost - userStars} ★`;
 
             const card = document.createElement('div');
             card.className = 'product-card';
-            card.style.opacity = (isPremiumActive) ? '0.75' : '1';
+            card.style.opacity = isPremiumActive ? '0.7' : '1';
             card.innerHTML = `
                 <div class="product-info">
                     <div class="product-icon" style="background: linear-gradient(135deg, rgba(255,180,60,0.1), rgba(255,140,0,0.05));">
-                        <i class="fas ${plan.icon}" style="color: ${plan.iconColor}; font-size: 28px;"></i>
+                        <i class="fas ${plan.icon}" style="color: ${plan.iconColor}; font-size: 26px;"></i>
                     </div>
                     <div class="product-details">
                         <h3>${plan.title} ${plan.discount ? `<span class="status-badge">${plan.discount}</span>` : ''}</h3>
@@ -701,23 +687,21 @@
                     </div>
                 </div>
                 <div class="product-action">
-                    <button class="btn btn-sm ${buttonDisabled ? 'btn-outline' : ''}" data-idx="${idx}" data-months="${plan.months}" data-cost="${plan.starsCost}" data-title="${plan.title}" ${buttonDisabled ? 'disabled' : ''}>
-                        <i class="fas ${isPremiumActive ? 'fa-check-circle' : 'fa-crown'}"></i> ${buttonText}
+                    <button class="btn btn-sm ${disabled ? 'btn-outline' : ''}" data-months="${plan.months}" data-cost="${plan.starsCost}" data-title="${plan.title}" ${disabled ? 'disabled' : ''}>
+                        <i class="fas ${isPremiumActive ? 'fa-check-circle' : 'fa-crown'}"></i> ${btnText}
                     </button>
                 </div>
             `;
-            const buyBtn = card.querySelector('button');
-            if (!buttonDisabled) {
-                buyBtn.addEventListener('click', (e) => {
-                    const monthsVal = parseInt(buyBtn.dataset.months);
-                    const costVal = parseInt(buyBtn.dataset.cost);
-                    const titleVal = buyBtn.dataset.title;
+            const btn = card.querySelector('button');
+            if (!disabled) {
+                btn.addEventListener('click', () => {
+                    const months = parseInt(btn.dataset.months);
+                    const cost = parseInt(btn.dataset.cost);
+                    const title = btn.dataset.title;
                     openModal(
-                        "Активация Telegram Premium",
-                        `Вы активируете <strong>${titleVal}</strong> за <strong>${costVal} Stars</strong>.<br><br>Текущий баланс: ${userStars} ★. После активации откроются все возможности Premium.`,
-                        () => {
-                            performBuyPremium(monthsVal, costVal, titleVal);
-                        }
+                        "Активация Premium",
+                        `Получить <strong>${title}</strong> за <strong>${cost} Stars</strong>?<br>Баланс: ${userStars} ★`,
+                        () => performBuyPremium(months, cost, title)
                     );
                 });
             }
@@ -725,15 +709,12 @@
         });
     }
 
-    // Инициализация магазина
-    function initStore() {
+    function init() {
         renderStarsPackages();
         renderPremiumPlans();
         updateUI();
     }
-
-    // Запуск
-    initStore();
+    init();
 </script>
 </body>
-</html>
+    </html>
