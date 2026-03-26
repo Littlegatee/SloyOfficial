@@ -7,25 +7,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// ENUMS
+// ============================================
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+  NONE
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+enum CommentMediaType {
+  TEXT
+  VOICE
+  NONE
+}
+
+// ============================================
+// MODELS
+// ============================================
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
   createdAt DateTime @default(now())
-  profile   Profile?
-  posts     Post[]
-  comments  Comment[]
-  likes     Like[]
+
+  // Relations
+  profile      Profile?
+  posts        Post[]
+  comments     Comment[]
+  likes        Like[]           // Лайки на посты
+  commentLikes CommentLike[]    // Лайки на комментарии
+
+  // Messages
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+
+  // Friendships
   friendships      Friendship[] @relation("UserFriendships")
   friendOf         Friendship[] @relation("FriendFriendships")
+
+  @@index([email])
+  @@map("users")
 }
 
 model Profile {
   id          String   @id @default(uuid())
   user_id     String   @unique
   user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
   username    String   @unique
   first_name  String
   last_name   String?
@@ -35,35 +75,74 @@ model Profile {
   birth_date  String?
   telegram_id String?
   is_verified Boolean  @default(false)
+  
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
+
+  @@index([username])
+  @@map("profiles")
 }
 
 model Post {
   id             String    @id @default(uuid())
   user_id        String
   user           User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  content_text   String
-  media_type     String?
+  
+  content_text   String    @db.Text
+  media_type     MediaType @default(NONE)
   media_url      String?
+  
   likes_count    Int       @default(0)
   comments_count Int       @default(0)
+  is_edited      Boolean   @default(false) // Флаг: был ли пост изменен
+  
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
+
+  // Relations
   comments       Comment[]
   likes          Like[]
+
+  @@index([user_id])
+  @@index([created_at])
+  @@map("posts")
 }
 
 model Comment {
-  id           String   @id @default(uuid())
+  id           String           @id @default(uuid())
   post_id      String
-  post         Post     @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  post         Post             @relation(fields: [post_id], references: [id], onDelete: Cascade)
   user_id      String
-  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  content_text String
-  created_at   DateTime @default(now())
+  user         User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  // Nested comments (tree structure)
+  parent_id    String?
+  parent       Comment?         @relation("CommentToComment", fields: [parent_id], references: [id], onDelete: Cascade)
+  replies      Comment[]        @relation("CommentToComment")
+  
+  // Comment content
+  content_text String?          @db.Text
+  media_type   CommentMediaType @default(TEXT)
+  voice_url    String?
+  voice_duration Int?
+  
+  likes_count  Int              @default(0)     // Счетчик лайков для быстрого отображения
+  is_edited    Boolean          @default(false) // Флаг: был ли коммент изменен
+  
+  created_at   DateTime         @default(now())
+  updated_at   DateTime         @updatedAt
+
+  // Relations
+  likes        CommentLike[]
+
+  @@index([post_id])
+  @@index([user_id])
+  @@index([parent_id])
+  @@index([created_at])
+  @@map("comments")
 }
 
+// Модель для лайков постов
 model Like {
   id         String   @id @default(uuid())
   post_id    String
@@ -72,7 +151,23 @@ model Like {
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   created_at DateTime @default(now())
 
-  @@unique([post_id, user_id])
+  @@unique([post_id, user_id]) // Защита от двойного лайка
+  @@index([post_id])
+  @@map("likes")
+}
+
+// НОВАЯ МОДЕЛЬ: Лайки для комментариев
+model CommentLike {
+  id         String   @id @default(uuid())
+  comment_id String
+  comment    Comment  @relation(fields: [comment_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([comment_id, user_id]) // Защита от двойного лайка на коммент
+  @@index([comment_id])
+  @@map("comment_likes")
 }
 
 model Message {
@@ -81,19 +176,27 @@ model Message {
   sender       User     @relation("SentMessages", fields: [sender_id], references: [id], onDelete: Cascade)
   recipient_id String
   recipient    User     @relation("ReceivedMessages", fields: [recipient_id], references: [id], onDelete: Cascade)
-  content_text String
+  
+  content_text String   @db.Text
   is_read      Boolean  @default(false)
   created_at   DateTime @default(now())
+
+  @@index([sender_id, recipient_id])
+  @@index([created_at])
+  @@map("messages")
 }
 
 model Friendship {
-  id         String   @id @default(uuid())
+  id         String           @id @default(uuid())
   user_id    String
-  user       User     @relation("UserFriendships", fields: [user_id], references: [id], onDelete: Cascade)
+  user       User             @relation("UserFriendships", fields: [user_id], references: [id], onDelete: Cascade)
   friend_id  String
-  friend     User     @relation("FriendFriendships", fields: [friend_id], references: [id], onDelete: Cascade)
-  status     String   @default("pending") // pending, accepted, rejected
-  created_at DateTime @default(now())
+  friend     User             @relation("FriendFriendships", fields: [friend_id], references: [id], onDelete: Cascade)
+  
+  status     FriendshipStatus @default(PENDING)
+  created_at DateTime         @default(now())
 
   @@unique([user_id, friend_id])
+  @@index([user_id, friend_id, status])
+  @@map("friendships")
 }
