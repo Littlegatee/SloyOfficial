@@ -4,18 +4,20 @@ import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 interface FriendItem {
   id: string;
   user_id: string;
   friend_id: string;
   status: string;
-  friend_profile: { username: string; first_name: string; avatar_url: string | null };
+  friend_profile: { user_id: string; username: string; first_name: string; avatar_url: string | null };
   direction: "sent" | "received";
 }
 
 export default function FriendsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -85,8 +87,8 @@ export default function FriendsPage() {
   const filtered = friends.filter(f => {
     const matchSearch = f.friend_profile.first_name.toLowerCase().includes(search.toLowerCase()) ||
       f.friend_profile.username.toLowerCase().includes(search.toLowerCase());
-    if (tab === "requests") return matchSearch && f.status === "pending";
-    return matchSearch;
+    if (tab === "requests") return matchSearch && f.status === "PENDING";
+    return matchSearch && f.status === "ACCEPTED";
   });
 
   return (
@@ -110,15 +112,29 @@ export default function FriendsPage() {
         <div className="glass rounded-3xl p-3 mb-4 space-y-1">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground px-3 py-1 font-medium">Результаты поиска</p>
           {searchResults.map(r => (
-            <div key={r.id} className="flex items-center gap-3 p-3 rounded-2xl hover:bg-accent/50 transition-all">
-              <div className="w-9 h-9 rounded-xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-xs">
-                {r.first_name.charAt(0)}
+            <div 
+              key={r.id} 
+              className="flex items-center gap-3 p-3 rounded-2xl hover:bg-accent/50 transition-all cursor-pointer"
+              onClick={() => navigate(`/profile/${r.user_id}`)}
+            >
+              <div className="w-9 h-9 rounded-xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-xs overflow-hidden">
+                {r.avatar_url ? (
+                  <img src={r.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  r.first_name.charAt(0)
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium">{r.first_name}</p>
                 <p className="text-[11px] text-muted-foreground">@{r.username}</p>
               </div>
-              <button onClick={() => sendRequest(r.user_id)} className="px-3 py-1.5 rounded-xl btn-gradient text-[11px]">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sendRequest(r.user_id);
+                }} 
+                className="px-3 py-1.5 rounded-xl btn-gradient text-[11px]"
+              >
                 <UserPlus className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -147,30 +163,50 @@ export default function FriendsPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map(friend => (
-            <div key={friend.id} className="flex items-center gap-3 p-3 rounded-2xl glass transition-all hover:shadow-md">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm">
-                {friend.friend_profile.first_name.charAt(0)}
+            <div 
+              key={friend.id} 
+              className="flex items-center gap-3 p-3 rounded-2xl glass transition-all hover:shadow-md cursor-pointer"
+              onClick={() => navigate(`/profile/${friend.friend_profile.user_id}`)}
+            >
+              <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm overflow-hidden">
+                {friend.friend_profile.avatar_url ? (
+                  <img src={friend.friend_profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  friend.friend_profile.first_name.charAt(0)
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold">{friend.friend_profile.first_name}</p>
                 <p className="text-[11px] text-muted-foreground">@{friend.friend_profile.username}</p>
               </div>
               <div className="flex items-center gap-2">
-                {friend.status === "accepted" && (
+                {friend.status === "ACCEPTED" && (
                   <>
                     <UserCheck className="w-4 h-4 text-green-500" />
-                    <button onClick={() => removeFriend(friend.id)} className="p-1.5 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFriend(friend.id);
+                      }} 
+                      className="p-1.5 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+                    >
                       <UserX className="w-4 h-4" />
                     </button>
                   </>
                 )}
-                {friend.status === "pending" && friend.direction === "received" && (
-                  <button onClick={() => acceptFriend(friend.id)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl btn-gradient text-[11px]">
+                {friend.status === "PENDING" && friend.direction === "received" && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      acceptFriend(friend.id);
+                    }} 
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl btn-gradient text-[11px]"
+                  >
                     <UserPlus className="w-3.5 h-3.5" />
                     Принять
                   </button>
                 )}
-                {friend.status === "pending" && friend.direction === "sent" && (
+                {friend.status === "PENDING" && friend.direction === "sent" && (
                   <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <Clock className="w-3.5 h-3.5" />
                     Отправлено

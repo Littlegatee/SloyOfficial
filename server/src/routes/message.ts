@@ -1,7 +1,7 @@
 import express from 'express';
 import prisma from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { io } from '../index.js';
+import { io } from '../socket.js';
 
 const router = express.Router();
 

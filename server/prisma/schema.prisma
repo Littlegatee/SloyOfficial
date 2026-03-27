@@ -58,7 +58,6 @@ model User {
   friendOf         Friendship[] @relation("FriendFriendships")
 
   @@index([email])
-  @@map("users")
 }
 
 model Profile {
@@ -70,6 +69,7 @@ model Profile {
   first_name  String
   last_name   String?
   avatar_url  String?
+  cover_url   String?
   status      String?
   city        String?
   birth_date  String?
@@ -80,7 +80,6 @@ model Profile {
   updated_at  DateTime @updatedAt
 
   @@index([username])
-  @@map("profiles")
 }
 
 model Post {
@@ -105,7 +104,6 @@ model Post {
 
   @@index([user_id])
   @@index([created_at])
-  @@map("posts")
 }
 
 model Comment {
@@ -139,7 +137,6 @@ model Comment {
   @@index([user_id])
   @@index([parent_id])
   @@index([created_at])
-  @@map("comments")
 }
 
 // Модель для лайков постов
@@ -153,7 +150,6 @@ model Like {
 
   @@unique([post_id, user_id]) // Защита от двойного лайка
   @@index([post_id])
-  @@map("likes")
 }
 
 // НОВАЯ МОДЕЛЬ: Лайки для комментариев
@@ -167,7 +163,6 @@ model CommentLike {
 
   @@unique([comment_id, user_id]) // Защита от двойного лайка на коммент
   @@index([comment_id])
-  @@map("comment_likes")
 }
 
 model Message {
@@ -181,9 +176,9 @@ model Message {
   is_read      Boolean  @default(false)
   created_at   DateTime @default(now())
 
-  @@index([sender_id, recipient_id])
+  @@index([sender_id])
+  @@index([recipient_id])
   @@index([created_at])
-  @@map("messages")
 }
 
 model Friendship {
@@ -195,8 +190,9 @@ model Friendship {
   
   status     FriendshipStatus @default(PENDING)
   created_at DateTime         @default(now())
+  updated_at DateTime         @updatedAt
 
   @@unique([user_id, friend_id])
-  @@index([user_id, friend_id, status])
-  @@map("friendships")
+  @@index([user_id])
+  @@index([friend_id])
 }

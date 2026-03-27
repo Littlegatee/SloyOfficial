@@ -1,7 +1,8 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, User, Users, MessageCircle, Settings, LogOut, Search, Moon, Sun } from "lucide-react";
+import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
+import UserSearch from "./UserSearch";
 
 const navItems = [
   { to: "/feed", icon: Home, label: "Лента" },
@@ -48,12 +49,7 @@ export default function AppSidebar() {
       </div>
 
       {/* Search */}
-      <div className="px-4 pb-2">
-        <div className="flex items-center gap-2 px-3 py-2.5 rounded-2xl glass-subtle text-muted-foreground text-sm cursor-pointer hover:border-primary/30 transition-all">
-          <Search className="w-4 h-4" />
-          <span className="text-xs">Поиск...</span>
-        </div>
-      </div>
+      <UserSearch />
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-2 space-y-0.5">
@@ -90,8 +86,12 @@ export default function AppSidebar() {
       {/* User */}
       <div className="p-4 border-t border-border/50">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm">
-            {profile?.first_name?.charAt(0) || "?"}
+          <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm overflow-hidden">
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              profile?.first_name?.charAt(0) || "?"
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate">{profile?.first_name || "Гость"}</p>

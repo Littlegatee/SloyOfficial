@@ -15,6 +15,7 @@ export interface Profile {
   first_name: string;
   last_name: string | null;
   avatar_url: string | null;
+  cover_url: string | null;
   status: string | null;
   city: string | null;
   birth_date: string | null;

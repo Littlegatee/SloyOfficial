@@ -18,21 +18,21 @@
     --secondary-foreground: 220 15% 15%;
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
-    --accent: 204 70% 95%;
-    --accent-foreground: 204 88% 40%;
+    --accent: hsl(var(--primary) / 0.1);
+    --accent-foreground: hsl(var(--primary));
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 204 88% 53%;
+    --ring: hsl(var(--primary));
     --radius: 1rem;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 220 9% 46%;
-    --sidebar-primary: 204 88% 53%;
+    --sidebar-primary: hsl(var(--primary));
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 204 70% 95%;
-    --sidebar-accent-foreground: 204 88% 40%;
+    --sidebar-accent: hsl(var(--primary) / 0.1);
+    --sidebar-accent-foreground: hsl(var(--primary));
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 204 88% 53%;
 
@@ -44,8 +44,8 @@
     --glass-highlight: 0 0% 100% / 0.8;
 
     /* Sloy brand */
-    --sloy-gradient: linear-gradient(135deg, hsl(204 88% 53%), hsl(217 91% 60%), hsl(252 85% 65%));
-    --sloy-gradient-subtle: linear-gradient(135deg, hsl(204 88% 53% / 0.1), hsl(252 85% 65% / 0.1));
+    --sloy-gradient: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85), hsl(var(--primary) / 0.7));
+    --sloy-gradient-subtle: linear-gradient(135deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.05));
     --sloy-online: 152 69% 47%;
     --sloy-surface: 220 20% 97%;
   }
@@ -63,20 +63,20 @@
     --secondary-foreground: 220 13% 91%;
     --muted: 224 20% 14%;
     --muted-foreground: 220 9% 55%;
-    --accent: 224 20% 16%;
-    --accent-foreground: 204 88% 70%;
+    --accent: hsl(var(--primary) / 0.15);
+    --accent-foreground: hsl(var(--primary));
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
     --border: 224 20% 16%;
     --input: 224 20% 16%;
-    --ring: 204 88% 53%;
+    --ring: hsl(var(--primary));
 
     --sidebar-background: 224 20% 8%;
     --sidebar-foreground: 220 9% 55%;
-    --sidebar-primary: 204 88% 53%;
+    --sidebar-primary: hsl(var(--primary));
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 224 20% 14%;
-    --sidebar-accent-foreground: 204 88% 70%;
+    --sidebar-accent: hsl(var(--primary) / 0.15);
+    --sidebar-accent-foreground: hsl(var(--primary));
     --sidebar-border: 224 20% 16%;
     --sidebar-ring: 204 88% 53%;
 
@@ -86,8 +86,8 @@
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     --glass-highlight: 0 0% 100% / 0.06;
 
-    --sloy-gradient: linear-gradient(135deg, hsl(204 88% 53%), hsl(217 91% 60%), hsl(252 85% 65%));
-    --sloy-gradient-subtle: linear-gradient(135deg, hsl(204 88% 53% / 0.15), hsl(252 85% 65% / 0.15));
+    --sloy-gradient: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85), hsl(var(--primary) / 0.7));
+    --sloy-gradient-subtle: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.1));
     --sloy-online: 152 69% 47%;
     --sloy-surface: 224 20% 12%;
   }
