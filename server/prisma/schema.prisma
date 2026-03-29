@@ -165,6 +165,15 @@ model CommentLike {
   @@index([comment_id])
 }
 
+enum MessageType {
+  TEXT
+  VOICE
+  STICKER
+  MEDIA
+  FILE
+  VIDEO_CIRCLE
+}
+
 model Message {
   id           String   @id @default(uuid())
   sender_id    String
@@ -172,8 +181,13 @@ model Message {
   recipient_id String
   recipient    User     @relation("ReceivedMessages", fields: [recipient_id], references: [id], onDelete: Cascade)
   
-  content_text String   @db.Text
+  message_type MessageType @default(TEXT)
+  content_text String?  @db.Text
+  media_url    String?
+  voice_duration Int?
+
   is_read      Boolean  @default(false)
+  is_edited    Boolean  @default(false)
   created_at   DateTime @default(now())
 
   @@index([sender_id])

@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { MapPin, Calendar, Edit2, Camera, Loader2, X, Save, Check, UserPlus, UserMinus, UserCheck, Clock } from "lucide-react";
+import { MapPin, Calendar, Edit2, Camera, Loader2, X, Save, Check, UserPlus, UserMinus, UserCheck, Clock, MessageCircle } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 
 export default function ProfilePage() {
   const { userId: paramUserId } = useParams();
+  const navigate = useNavigate();
   const { user: currentUser, profile: myProfile, refreshProfile } = useAuth();
   
   const isOwnProfile = !paramUserId || paramUserId === currentUser?.id;
@@ -278,17 +279,29 @@ export default function ProfilePage() {
               Редактировать
             </button>
           ) : (
-            <button 
-              onClick={handleFriendAction}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-medium transition-all ${
-                friendshipStatus === 'ACCEPTED' 
-                ? 'bg-secondary text-secondary-foreground' 
-                : 'btn-gradient text-white'
-              }`}
-            >
-              {friendshipStatus === 'ACCEPTED' ? <UserCheck className="w-3.5 h-3.5" /> : friendshipStatus === 'PENDING' ? <Clock className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-              {friendshipStatus === 'ACCEPTED' ? 'В друзьях' : friendshipStatus === 'PENDING' ? 'Запрос отправлен' : 'Добавить в друзья'}
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleFriendAction}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-medium transition-all ${
+                  friendshipStatus === 'ACCEPTED' 
+                  ? 'bg-secondary text-secondary-foreground' 
+                  : 'btn-gradient text-white'
+                }`}
+              >
+                {friendshipStatus === 'ACCEPTED' ? <UserCheck className="w-3.5 h-3.5" /> : friendshipStatus === 'PENDING' ? <Clock className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+                {friendshipStatus === 'ACCEPTED' ? 'В друзьях' : friendshipStatus === 'PENDING' ? 'Запрос отправлен' : 'Добавить в друзья'}
+              </button>
+              
+              {friendshipStatus === 'ACCEPTED' && (
+                <button 
+                  onClick={() => navigate(`/messages?userId=${effectiveUserId}`)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-medium transition-all btn-gradient text-white"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  Написать
+                </button>
+              )}
+            </div>
           )}
         </div>
         {targetProfile?.status && (
@@ -303,7 +316,7 @@ export default function ProfilePage() {
           )}
           <span className="flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5" />
-            В СЛОЕ с 2025
+            В СЛОЕ с {targetProfile?.created_at ? new Date(targetProfile.created_at).getFullYear() : new Date().getFullYear()}
           </span>
         </div>
         <div className="flex items-center gap-6 mt-4">

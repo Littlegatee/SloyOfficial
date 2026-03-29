@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Save, Loader2, Moon, Sun, Monitor, Bell, Shield, User, Lock, Eye, ChevronRight } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Save, Loader2, Moon, Sun, Monitor, Bell, Shield, User, Lock, Eye, ChevronRight, Camera, Image as ImageIcon, Palette, LogOut, Check, ArrowLeft } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -19,6 +19,8 @@ export default function SettingsPage() {
 
   // Appearance State
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+  const [globalWallpaper, setGlobalWallpaper] = useState<string | null>(null);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
 
   // Privacy State (Mocked)
   const [privacySettings, setPrivacySettings] = useState({
@@ -44,7 +46,70 @@ export default function SettingsPage() {
     } else {
       setTheme("system");
     }
+    
+    const savedWallpaper = localStorage.getItem("global_chat_wallpaper");
+    if (savedWallpaper) {
+      setGlobalWallpaper(savedWallpaper);
+    }
   }, []);
+
+  const handleWallpaperChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Изображение слишком большое (максимум 5MB)");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onloadend = () => {
+      const base64data = reader.result as string;
+      
+      // Create a temporary image to resize it for better quality/size ratio
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Calculate new dimensions (max 1920x1080)
+        let width = img.width;
+        let height = img.height;
+        const maxDimension = 1920;
+        
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw with high quality
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // Save as high quality JPEG
+        const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.9);
+        
+        localStorage.setItem("global_chat_wallpaper", optimizedBase64);
+        setGlobalWallpaper(optimizedBase64);
+        toast.success("Общие обои для чатов обновлены");
+      };
+      img.src = base64data;
+    };
+  };
+
+  const removeGlobalWallpaper = () => {
+    localStorage.removeItem("global_chat_wallpaper");
+    setGlobalWallpaper(null);
+    toast.success("Общие обои сброшены");
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -264,7 +329,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div>
+              <div className="mb-8">
                 <h4 className="text-sm font-medium text-muted-foreground mb-4">Цветовой акцент</h4>
                 <div className="flex gap-3">
                   {['262.1 83.3% 57.8%', '221.2 83.2% 53.3%', '160 84.1% 39.4%', '45.4 93.4% 47.5%', '0 84.2% 60.2%', '330 81.3% 60.6%'].map((color) => (
@@ -275,6 +340,53 @@ export default function SettingsPage() {
                       style={{ backgroundColor: `hsl(${color})` }} 
                     />
                   ))}
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-border/30 space-y-6">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-primary" /> Обои для чатов (Общие)
+                </h3>
+                <p className="text-sm text-muted-foreground max-w-xl">
+                  Эти обои будут использоваться во всех чатах по умолчанию. Вы можете установить индивидуальные обои для конкретного чата в его настройках (мини-профиль).
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-6 items-start">
+                  <div className="w-48 h-64 rounded-2xl border border-border/50 bg-black/20 overflow-hidden relative shrink-0 flex items-center justify-center">
+                    {globalWallpaper ? (
+                      <img src={globalWallpaper} alt="Wallpaper preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-muted-foreground text-sm flex flex-col items-center gap-2">
+                        <ImageIcon className="w-8 h-8 opacity-50" />
+                        <span>По умолчанию</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <input 
+                      type="file" 
+                      ref={wallpaperInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={handleWallpaperChange} 
+                    />
+                    <button 
+                      onClick={() => wallpaperInputRef.current?.click()}
+                      className="px-6 py-3 rounded-xl btn-gradient font-medium flex items-center gap-2"
+                    >
+                      <ImageIcon className="w-4 h-4" /> Выбрать из галереи
+                    </button>
+                    
+                    {globalWallpaper && (
+                      <button 
+                        onClick={removeGlobalWallpaper}
+                        className="px-6 py-3 rounded-xl bg-red-500/10 text-red-500 font-medium flex items-center gap-2 hover:bg-red-500/20 transition-colors"
+                      >
+                        Сбросить обои
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
