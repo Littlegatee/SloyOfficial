@@ -149,6 +149,9 @@ export default function MessagesPage() {
   const [forwardPickerOpen, setForwardPickerOpen] = useState(false);
   const [forwardingMessage, setForwardingMessage] = useState<ChatMessage | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<ChatMessage[]>([]);
+  const [currentPinnedIndex, setCurrentPinnedIndex] = useState(0);
+  const [pinnedListOpen, setPinnedListOpen] = useState(false);
+  const pinnedHoldTimerRef = useRef<number | null>(null);
 
   const selectedDialog = useMemo(() => {
     if (!selectedUserId) return null;
@@ -163,6 +166,51 @@ export default function MessagesPage() {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    setCurrentPinnedIndex((prev) => {
+      if (!pinnedMessages.length) return 0;
+      return Math.min(prev, pinnedMessages.length - 1);
+    });
+  }, [pinnedMessages]);
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const el = document.getElementById(`msg-${messageId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.classList.add('bg-primary/10');
+    setTimeout(() => el?.classList.remove('bg-primary/10'), 1200);
+  }, []);
+
+  const handlePinnedTap = useCallback(() => {
+    if (!pinnedMessages.length) return;
+    const nextIndex = pinnedMessages.length > 1 ? (currentPinnedIndex + 1) % pinnedMessages.length : 0;
+    setCurrentPinnedIndex(nextIndex);
+    jumpToMessage(pinnedMessages[nextIndex].id);
+  }, [currentPinnedIndex, jumpToMessage, pinnedMessages]);
+
+  const unpinCurrentMessage = useCallback(async () => {
+    const current = pinnedMessages[currentPinnedIndex];
+    if (!current || !selectedUserId) return;
+    try {
+      await api.post(`/messages/${current.id}/pin`);
+      await fetchPinnedMessages(selectedUserId);
+      toast.success("Откреплено");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Не удалось открепить");
+    }
+  }, [currentPinnedIndex, pinnedMessages, selectedUserId]);
+
+  const unpinAllMessages = useCallback(async () => {
+    if (!selectedUserId || pinnedMessages.length === 0) return;
+    try {
+      await Promise.all(pinnedMessages.map((m) => api.post(`/messages/${m.id}/pin`)));
+      await fetchPinnedMessages(selectedUserId);
+      setPinnedListOpen(false);
+      toast.success("Все закрепы очищены");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Не удалось открепить все");
+    }
+  }, [pinnedMessages, selectedUserId]);
 
   useEffect(() => {
     if (!user) return;
@@ -1231,6 +1279,7 @@ export default function MessagesPage() {
       if (typingClearTimerRef.current) window.clearTimeout(typingClearTimerRef.current);
       if (stopTypingTimerRef.current) window.clearTimeout(stopTypingTimerRef.current);
       if (recordingClearTimerRef.current) window.clearTimeout(recordingClearTimerRef.current);
+      if (pinnedHoldTimerRef.current) window.clearTimeout(pinnedHoldTimerRef.current);
     };
   }, [user, selectedUserId]);
 
@@ -1799,7 +1848,7 @@ export default function MessagesPage() {
             )}
             {selectedUserId ? (
               <div className="relative z-10 flex flex-col h-full">
-                <div className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-4 border-b border-border/30 glass-subtle shrink-0">
+                <div className="relative z-30 flex items-center gap-2 sm:gap-3 p-2.5 sm:p-4 border-b border-border/30 glass-subtle shrink-0">
                   <button onClick={() => setSelectedUserId(null)} className="md:hidden p-1 text-muted-foreground">
                     <ArrowLeft className="w-5 h-5" />
                   </button>
@@ -1856,7 +1905,7 @@ export default function MessagesPage() {
                     </button>
                     {chatActionsOpen && (
                       <div
-                        className="absolute right-0 top-full mt-2 p-2 rounded-2xl glass border border-border/30 shadow-xl z-30 flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+                        className="absolute right-0 top-full mt-2 p-2 rounded-2xl glass border border-border/30 shadow-xl z-[70] flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
@@ -1937,29 +1986,63 @@ export default function MessagesPage() {
                 </div>
 
                 {pinnedMessages.length > 0 && (
-                  <div className="px-4 py-2 border-b border-border/10 glass-subtle">
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <Pin className="w-3.5 h-3.5" />
-                      <span className="font-semibold">Закреплено</span>
-                      <span className="ml-auto">{pinnedMessages.length}</span>
-                    </div>
-                    <div className="mt-1 flex gap-2 overflow-x-auto hide-scrollbar">
-                      {pinnedMessages.slice(0, 10).map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            const el = document.getElementById(`msg-${m.id}`);
-                            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el?.classList.add('bg-primary/10');
-                            setTimeout(() => el?.classList.remove('bg-primary/10'), 900);
-                          }}
-                          className="shrink-0 px-3 py-1.5 rounded-full glass hover:bg-white/5 transition-colors text-[11px] max-w-[240px] truncate"
-                          title={m.content_text || m.message_type}
+                  <div className="relative z-10 px-3 sm:px-4 py-2 border-b border-border/10 glass-subtle">
+                    <button
+                      onPointerDown={() => {
+                        if (pinnedHoldTimerRef.current) window.clearTimeout(pinnedHoldTimerRef.current);
+                        pinnedHoldTimerRef.current = window.setTimeout(() => setPinnedListOpen(true), 450);
+                      }}
+                      onPointerUp={() => {
+                        if (pinnedHoldTimerRef.current) {
+                          window.clearTimeout(pinnedHoldTimerRef.current);
+                          pinnedHoldTimerRef.current = null;
+                        }
+                      }}
+                      onPointerCancel={() => {
+                        if (pinnedHoldTimerRef.current) {
+                          window.clearTimeout(pinnedHoldTimerRef.current);
+                          pinnedHoldTimerRef.current = null;
+                        }
+                      }}
+                      onClick={handlePinnedTap}
+                      className="w-full flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-white/5 transition-colors text-left"
+                      title="Тап: следующий закреп и переход. Удержание: список всех закрепов"
+                    >
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Pin className="w-3.5 h-3.5 text-primary" />
+                        <div className="flex flex-col gap-1">
+                          {pinnedMessages.map((_, idx) => (
+                            <span
+                              key={idx}
+                              className={`block w-0.5 h-3 rounded-full ${idx === currentPinnedIndex ? 'bg-primary' : 'bg-border/60'}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Закреплено {currentPinnedIndex + 1}/{pinnedMessages.length}
+                        </p>
+                        <p
+                          key={pinnedMessages[currentPinnedIndex]?.id}
+                          className="text-xs sm:text-sm font-medium truncate animate-page-in"
                         >
-                          {m.message_type === 'TEXT' ? (m.content_text || '…') : m.message_type}
-                        </button>
-                      ))}
-                    </div>
+                          {pinnedMessages[currentPinnedIndex]?.message_type === 'TEXT'
+                            ? (pinnedMessages[currentPinnedIndex]?.content_text || '...')
+                            : pinnedMessages[currentPinnedIndex]?.message_type}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          unpinCurrentMessage();
+                        }}
+                        className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                        title="Открепить текущий"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </button>
                   </div>
                 )}
 
@@ -2143,6 +2226,41 @@ export default function MessagesPage() {
                           Сейчас
                         </button>
                       </div>
+                    </div>
+                  </DialogContent>
+                </UIDialog>
+
+                <UIDialog open={pinnedListOpen} onOpenChange={setPinnedListOpen}>
+                  <DialogContent className="sm:max-w-md p-0 overflow-hidden border-border/30 glass-subtle">
+                    <DialogTitle className="p-4 pb-2 text-base font-bold">Все закрепленные сообщения</DialogTitle>
+                    <DialogDescription className="px-4 pb-2 text-sm text-muted-foreground">
+                      Нажмите на сообщение, чтобы перейти к нему.
+                    </DialogDescription>
+                    <div className="max-h-[55vh] overflow-y-auto hide-scrollbar divide-y divide-border/10">
+                      {pinnedMessages.map((m, idx) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setCurrentPinnedIndex(idx);
+                            setPinnedListOpen(false);
+                            jumpToMessage(m.id);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors"
+                        >
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">#{idx + 1}</p>
+                          <p className="text-sm font-medium truncate">
+                            {m.message_type === 'TEXT' ? (m.content_text || '...') : m.message_type}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="p-3 border-t border-border/20">
+                      <button
+                        onClick={unpinAllMessages}
+                        className="w-full px-4 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+                      >
+                        Открепить все
+                      </button>
                     </div>
                   </DialogContent>
                 </UIDialog>
