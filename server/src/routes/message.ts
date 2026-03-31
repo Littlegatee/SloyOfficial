@@ -13,18 +13,27 @@ function clampInt(value: any, min: number, max: number, fallback: number) {
 
 function isClosedConnectionError(error: any) {
   const message = String(error?.message || '');
-  return error?.code === 'P1017' || message.includes('Server has closed the connection');
+  return (
+    error?.code === 'P1017' ||
+    message.includes('Server has closed the connection') ||
+    message.includes('Engine is not yet connected')
+  );
 }
 
 async function withDbReconnectRetry<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (error: any) {
-    if (!isClosedConnectionError(error)) throw error;
-    await prisma.$disconnect().catch(() => undefined);
-    await prisma.$connect();
-    return await fn();
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      if (!isClosedConnectionError(error)) throw error;
+      await prisma.$disconnect().catch(() => undefined);
+      await prisma.$connect();
+      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+    }
   }
+  throw lastError;
 }
 
 // Get dialogs
@@ -255,19 +264,25 @@ router.get('/:userId', authenticateToken, async (req: any, res) => {
 
     // Mark as read (only for messages already delivered in this chat)
     if (!isSelf) {
-      await prisma.message.updateMany({
-        where: { sender_id: otherId, recipient_id: myId, is_read: false },
-        data: { is_read: true },
-      });
+      await withDbReconnectRetry(() =>
+        prisma.message.updateMany({
+          where: { sender_id: otherId, recipient_id: myId, is_read: false },
+          data: { is_read: true },
+        }),
+      );
       io.to(otherId).emit('messages_read', myId);
     } else {
-      await prisma.message.updateMany({
-        where: { sender_id: myId, recipient_id: myId, is_read: false },
-        data: { is_read: true },
-      });
+      await withDbReconnectRetry(() =>
+        prisma.message.updateMany({
+          where: { sender_id: myId, recipient_id: myId, is_read: false },
+          data: { is_read: true },
+        }),
+      );
     }
 
-    const cursorMessage = cursor ? await prisma.message.findUnique({ where: { id: cursor } }) : null;
+    const cursorMessage = cursor
+      ? await withDbReconnectRetry(() => prisma.message.findUnique({ where: { id: cursor } }))
+      : null;
     const cursorCreatedAt = cursorMessage?.created_at;
 
     const where: any = {
@@ -288,19 +303,21 @@ router.get('/:userId', authenticateToken, async (req: any, res) => {
     }
 
     // Fetch newest->older for paging, then reverse to keep UI ascending
-    const page = await prisma.message.findMany({
-      where,
-      include: {
-        reply_to: {
-          include: {
-            sender: { include: { profile: true } }
-          }
+    const page = await withDbReconnectRetry(() =>
+      prisma.message.findMany({
+        where,
+        include: {
+          reply_to: {
+            include: {
+              sender: { include: { profile: true } }
+            }
+          },
+          reactions: { select: { emoji: true, user_id: true } },
         },
-        reactions: { select: { emoji: true, user_id: true } },
-      },
-      orderBy: { created_at: 'desc' },
-      take: take + 1,
-    });
+        orderBy: { created_at: 'desc' },
+        take: take + 1,
+      }),
+    );
 
     const hasMore = page.length > take;
     const sliced = hasMore ? page.slice(0, take) : page;
@@ -312,7 +329,7 @@ router.get('/:userId', authenticateToken, async (req: any, res) => {
     res.status(400).json({ error: error.message });
   }
 });
-
+      
 // Toggle reaction for a message (adds/removes emoji reaction by current user)
 router.post('/:id/reactions', authenticateToken, async (req: any, res) => {
   const me = req.user.id;
@@ -704,20 +721,22 @@ router.get('/:userId/pins', authenticateToken, async (req: any, res) => {
   const me = req.user.id;
   const other = req.params.userId;
   try {
-    const pins = await prisma.messagePin.findMany({
-      where: {
-        user_id: me,
-        message: {
-          OR: [
-            { sender_id: me, recipient_id: other },
-            { sender_id: other, recipient_id: me },
-          ],
+    const pins = await withDbReconnectRetry(() =>
+      prisma.messagePin.findMany({
+        where: {
+          user_id: me,
+          message: {
+            OR: [
+              { sender_id: me, recipient_id: other },
+              { sender_id: other, recipient_id: me },
+            ],
+          },
         },
-      },
-      include: { message: true },
-      orderBy: { pinned_at: 'desc' },
-      take: 20,
-    });
+        include: { message: true },
+        orderBy: { pinned_at: 'desc' },
+        take: 20,
+      }),
+    );
     res.json(pins.map(p => p.message));
   } catch (error: any) {
     res.status(400).json({ error: error.message });
