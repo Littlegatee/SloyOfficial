@@ -9,8 +9,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       <AppSidebar />
-      <main className="ml-[260px] min-h-screen">
-        <div className={`${isMessagesPage ? 'max-w-5xl' : 'max-w-2xl'} mx-auto py-8 px-6 animate-page-in transition-all duration-300`}>
+      <main className="min-h-screen md:ml-[260px]">
+        <div
+          className={`${isMessagesPage ? 'max-w-5xl' : 'max-w-2xl'} mx-auto animate-page-in transition-all duration-300 px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] pt-4 sm:px-4 sm:pt-6 md:px-6 md:py-8 md:pb-8`}
+        >
           {children}
         </div>
       </main>

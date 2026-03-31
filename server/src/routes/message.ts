@@ -11,19 +11,35 @@ function clampInt(value: any, min: number, max: number, fallback: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function isClosedConnectionError(error: any) {
+  const message = String(error?.message || '');
+  return error?.code === 'P1017' || message.includes('Server has closed the connection');
+}
+
+async function withDbReconnectRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    if (!isClosedConnectionError(error)) throw error;
+    await prisma.$disconnect().catch(() => undefined);
+    await prisma.$connect();
+    return await fn();
+  }
+}
+
 // Get dialogs
 router.get('/dialogs', authenticateToken, async (req: any, res) => {
   const userId = req.user.id;
   try {
-    const me = await prisma.user.findUnique({
+    const me = await withDbReconnectRetry(() => prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true },
-    });
+    }));
 
-    const pins = await prisma.dialogPin.findMany({
+    const pins = await withDbReconnectRetry(() => prisma.dialogPin.findMany({
       where: { user_id: userId },
       select: { other_user_id: true },
-    });
+    }));
     const pinnedSet = new Set(pins.map(p => p.other_user_id));
 
     // Some deployments may not have the dialogMute table yet.
@@ -51,7 +67,7 @@ router.get('/dialogs', authenticateToken, async (req: any, res) => {
     }
     const archivedSet = new Set(archives.map(a => a.other_user_id));
 
-    const messages = await prisma.message.findMany({
+    const messages = await withDbReconnectRetry(() => prisma.message.findMany({
       where: {
         OR: [{ sender_id: userId }, { recipient_id: userId }],
         NOT: {
@@ -63,7 +79,7 @@ router.get('/dialogs', authenticateToken, async (req: any, res) => {
         recipient: { include: { profile: true } },
       },
       orderBy: { created_at: 'desc' },
-    });
+    }));
 
     const dialogMap: Record<string, any> = {};
     const unreadCountByOtherId: Record<string, number> = {};
@@ -104,11 +120,11 @@ router.get('/dialogs', authenticateToken, async (req: any, res) => {
     }
 
     // Saved Messages ("Избранное") — always present as a self-chat
-    const latestSelf = await prisma.message.findFirst({
+    const latestSelf = await withDbReconnectRetry(() => prisma.message.findFirst({
       where: { sender_id: userId, recipient_id: userId },
       orderBy: { created_at: 'desc' },
       select: { content_text: true, created_at: true },
-    });
+    }));
     const saved = {
       userId,
       username: me?.profile?.username || '',
@@ -308,26 +324,28 @@ router.post('/:id/reactions', authenticateToken, async (req: any, res) => {
   }
 
   try {
-    const message = await prisma.message.findUnique({ where: { id: messageId } });
+    const message = await withDbReconnectRetry(() => prisma.message.findUnique({ where: { id: messageId } }));
     if (!message) return res.status(404).json({ error: "Сообщение не найдено" });
     if (message.sender_id !== me && message.recipient_id !== me) {
       return res.status(403).json({ error: "Нет прав" });
     }
 
-    const existing = await prisma.messageReaction.findUnique({
+    const existing = await withDbReconnectRetry(() => prisma.messageReaction.findUnique({
       where: { message_id_user_id_emoji: { message_id: messageId, user_id: me, emoji } },
-    });
+    }));
 
     if (existing) {
-      await prisma.messageReaction.delete({ where: { id: existing.id } });
+      await withDbReconnectRetry(() => prisma.messageReaction.delete({ where: { id: existing.id } }));
     } else {
-      await prisma.messageReaction.create({ data: { message_id: messageId, user_id: me, emoji } });
+      await withDbReconnectRetry(() =>
+        prisma.messageReaction.create({ data: { message_id: messageId, user_id: me, emoji } }),
+      );
     }
 
-    const reactions = await prisma.messageReaction.findMany({
+    const reactions = await withDbReconnectRetry(() => prisma.messageReaction.findMany({
       where: { message_id: messageId },
       select: { emoji: true, user_id: true },
-    });
+    }));
 
     const payload = { messageId, reactions };
     io.to(message.sender_id).emit('message_reactions_updated', payload);
@@ -534,32 +552,34 @@ router.post('/forward', authenticateToken, async (req: any, res) => {
   const sender_id = req.user.id;
   const { message_id, recipient_id } = req.body as { message_id: string; recipient_id: string };
   try {
-    const original = await prisma.message.findUnique({ where: { id: message_id } });
+    const original = await withDbReconnectRetry(() => prisma.message.findUnique({ where: { id: message_id } }));
     if (!original) return res.status(404).json({ error: "Сообщение не найдено" });
     if (original.sender_id !== sender_id && original.recipient_id !== sender_id) {
       return res.status(403).json({ error: "Нет доступа к этому сообщению" });
     }
 
     // reuse send rules by copying minimal checks
-    const blocked = await prisma.userBlock.findFirst({
+    const blocked = await withDbReconnectRetry(() => prisma.userBlock.findFirst({
       where: {
         OR: [
           { blocker_id: sender_id, blocked_id: recipient_id },
           { blocker_id: recipient_id, blocked_id: sender_id },
         ],
       },
-    });
+    }));
     if (blocked) {
       return res.status(403).json({ error: "Нельзя переслать: пользователь заблокирован" });
     }
 
-    const recipientProfile = await prisma.profile.findUnique({ where: { user_id: recipient_id } });
+    const recipientProfile = await withDbReconnectRetry(() =>
+      prisma.profile.findUnique({ where: { user_id: recipient_id } }),
+    );
     const allow = recipientProfile?.allow_messages_from || 'FRIENDS';
     if (allow === 'NOBODY') {
       return res.status(403).json({ error: "Пользователь запретил личные сообщения" });
     }
 
-    const friendship = await prisma.friendship.findFirst({
+    const friendship = await withDbReconnectRetry(() => prisma.friendship.findFirst({
       where: {
         status: 'ACCEPTED',
         OR: [
@@ -567,12 +587,12 @@ router.post('/forward', authenticateToken, async (req: any, res) => {
           { user_id: recipient_id, friend_id: sender_id },
         ],
       },
-    });
+    }));
     if (allow === 'FRIENDS' && !friendship) {
       return res.status(403).json({ error: "Можно пересылать только друзьям" });
     }
 
-    const msg = await prisma.message.create({
+    const msg = await withDbReconnectRetry(() => prisma.message.create({
       data: {
         sender_id,
         recipient_id,
@@ -585,7 +605,7 @@ router.post('/forward', authenticateToken, async (req: any, res) => {
       include: {
         reply_to: { include: { sender: { include: { profile: true } } } },
       },
-    });
+    }));
 
     io.to(recipient_id).emit('receive_message', msg);
     res.json(msg);

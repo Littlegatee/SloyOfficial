@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Send, ArrowLeft, Loader2, Mic, Square, Smile, Play, Pause, Search, X, Paperclip, FileIcon, ImageIcon, VideoIcon, Camera, Image as ImageIcon2, Trash2, Edit2, Check, CheckCheck, Reply, Pin, Forward, CalendarDays, BellOff, Archive, ArchiveX } from "lucide-react";
+import { Send, ArrowLeft, Loader2, Mic, Square, Smile, Play, Pause, Search, X, Paperclip, FileIcon, ImageIcon, VideoIcon, Camera, Image as ImageIcon2, Trash2, Edit2, Check, CheckCheck, Reply, Pin, Forward, CalendarDays, BellOff, Archive, ArchiveX, MoreHorizontal } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth, Profile } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -137,6 +137,7 @@ export default function MessagesPage() {
   const [jumpToDateOpen, setJumpToDateOpen] = useState(false);
   const [jumpToDateValue, setJumpToDateValue] = useState<string>("");
   const [muteMenuOpen, setMuteMenuOpen] = useState(false);
+  const [chatActionsOpen, setChatActionsOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   // Search in current chat (fast UX)
@@ -429,6 +430,7 @@ export default function MessagesPage() {
     setChatSearchServerResults([]);
     setChatSearchNextCursor(null);
     setMuteMenuOpen(false);
+    setChatActionsOpen(false);
     setReactionPickerForId(null);
     setJumpToDateOpen(false);
     setArchiveOpen(false);
@@ -1298,8 +1300,10 @@ export default function MessagesPage() {
   };
 
   const MessageActions = ({ msg, isMine }: { msg: ChatMessage, isMine: boolean }) => {
+    const pickerOpen = reactionPickerForId === msg.id;
+
     return (
-      <div className={`absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full mr-3' : 'left-full ml-3'} opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center gap-1.5 z-20`}>
+      <div className={`absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full mr-3' : 'left-full ml-3'} ${pickerOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-all duration-300 flex items-center gap-1.5 z-20`}>
         <div className="relative">
           <button
             onClick={(e) => {
@@ -1311,9 +1315,9 @@ export default function MessagesPage() {
           >
             <Smile className="w-4 h-4" />
           </button>
-          {reactionPickerForId === msg.id && (
+          {pickerOpen && (
             <div
-              className={`absolute top-1/2 -translate-y-1/2 ${isMine ? 'right-full mr-2' : 'left-full ml-2'} px-2 py-1 rounded-full glass border border-border/30 shadow-lg flex items-center gap-1`}
+              className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full glass border border-border/30 shadow-lg flex items-center gap-1 z-30"
               onClick={(e) => e.stopPropagation()}
             >
               {["👍", "❤️", "😂", "🔥", "😮", "😢"].map((em) => (
@@ -1433,7 +1437,7 @@ export default function MessagesPage() {
         className={`flex ${isMine ? "justify-end" : "justify-start"} relative`}
       >
         <div 
-          className="relative group max-w-[75%] transition-transform duration-200 ease-out"
+          className="relative group max-w-[88vw] sm:max-w-[75%] min-w-0 transition-transform duration-200 ease-out"
           style={{ transform: `translateX(${swipeOffset}px)` }}
         >
           <MessageActions msg={msg} isMine={isMine} />
@@ -1488,8 +1492,8 @@ export default function MessagesPage() {
               </div>
             )}
             {msg.message_type === 'TEXT' && (
-              <div className="flex flex-col gap-0.5">
-                <span>{msg.content_text}</span>
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content_text}</span>
               </div>
             )}
             {msg.message_type === 'STICKER' && <img src={msg.media_url!} alt="sticker" className="w-24 h-24 object-contain drop-shadow-lg" />}
@@ -1621,13 +1625,16 @@ export default function MessagesPage() {
 
   return (
     <AppLayout>
-      <h2 className="text-2xl font-bold mb-6">Сообщения</h2>
+      <h2 className="mb-3 text-xl font-bold sm:mb-6 sm:text-2xl">Сообщения</h2>
 
-      <div className="glass rounded-3xl overflow-hidden shadow-sm" style={{ height: "calc(100vh - 140px)", minHeight: "500px" }}>
+      <div
+        className="glass rounded-2xl sm:rounded-3xl overflow-hidden shadow-sm"
+        style={{ height: "calc(100dvh - 150px)", minHeight: "460px" }}
+      >
         <div className="flex h-full">
           {/* Dialog List */}
           <div className={`w-full md:w-[350px] border-r border-border/30 flex flex-col ${selectedUserId ? "hidden md:flex" : "flex"}`}>
-            <div className="p-3 border-b border-border/30 relative">
+            <div className="p-2.5 sm:p-3 border-b border-border/30 relative">
               <input
                 type="text"
                 placeholder="Поиск диалогов..."
@@ -1792,7 +1799,7 @@ export default function MessagesPage() {
             )}
             {selectedUserId ? (
               <div className="relative z-10 flex flex-col h-full">
-                <div className="flex items-center gap-3 p-4 border-b border-border/30 glass-subtle shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-4 border-b border-border/30 glass-subtle shrink-0">
                   <button onClick={() => setSelectedUserId(null)} className="md:hidden p-1 text-muted-foreground">
                     <ArrowLeft className="w-5 h-5" />
                   </button>
@@ -1836,74 +1843,97 @@ export default function MessagesPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setChatSearchOpen(v => !v);
-                      setShowAttachments(false);
-                      setShowStickers(false);
-                      if (!chatSearchOpen) {
-                        // opening
-                        setTimeout(() => {
-                          const el = document.getElementById('chat-search-input') as HTMLInputElement | null;
-                          el?.focus();
-                        }, 0);
-                      }
-                    }}
-                    className={`ml-auto p-2 rounded-xl transition-colors ${chatSearchOpen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-primary'}`}
-                    title="Поиск по сообщениям"
-                  >
-                    <Search className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setJumpToDateOpen(true);
-                      setJumpToDateValue("");
-                      setShowAttachments(false);
-                      setShowStickers(false);
-                    }}
-                    className="p-2 rounded-xl text-muted-foreground hover:bg-white/5 hover:text-primary transition-colors"
-                    title="Прыжок к дате"
-                  >
-                    <CalendarDays className="w-5 h-5" />
-                  </button>
-                  <div className="relative">
+                  <div className="ml-auto relative">
                     <button
-                      onClick={() => setMuteMenuOpen(v => !v)}
-                      className={`p-2 rounded-xl transition-colors ${
-                        selectedDialog?.muted ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-primary'
-                      }`}
-                      title="Заглушить чат"
+                      onClick={() => {
+                        setChatActionsOpen(v => !v);
+                        setMuteMenuOpen(false);
+                      }}
+                      className={`p-2 rounded-xl transition-colors ${chatActionsOpen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-primary'}`}
+                      title="Действия"
                     >
-                      <BellOff className="w-5 h-5" />
+                      <MoreHorizontal className="w-5 h-5" />
                     </button>
-                    {muteMenuOpen && (
+                    {chatActionsOpen && (
                       <div
-                        className="absolute right-0 top-full mt-2 w-52 rounded-2xl glass border border-border/30 shadow-xl overflow-hidden z-30"
+                        className="absolute right-0 top-full mt-2 p-2 rounded-2xl glass border border-border/30 shadow-xl z-30 flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <button onClick={() => setDialogMute('1h')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
-                          Заглушить на 1 час
+                        <button
+                          onClick={() => {
+                            setChatSearchOpen(v => !v);
+                            setShowAttachments(false);
+                            setShowStickers(false);
+                            if (!chatSearchOpen) {
+                              setTimeout(() => {
+                                const el = document.getElementById('chat-search-input') as HTMLInputElement | null;
+                                el?.focus();
+                              }, 0);
+                            }
+                            setChatActionsOpen(false);
+                          }}
+                          className={`p-2 rounded-xl transition-colors ${chatSearchOpen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-primary'}`}
+                          title="Поиск по сообщениям"
+                        >
+                          <Search className="w-5 h-5" />
                         </button>
-                        <button onClick={() => setDialogMute('8h')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
-                          Заглушить на 8 часов
+                        <button
+                          onClick={() => {
+                            setJumpToDateOpen(true);
+                            setJumpToDateValue("");
+                            setShowAttachments(false);
+                            setShowStickers(false);
+                            setChatActionsOpen(false);
+                          }}
+                          className="p-2 rounded-xl text-muted-foreground hover:bg-white/5 hover:text-primary transition-colors"
+                          title="Прыжок к дате"
+                        >
+                          <CalendarDays className="w-5 h-5" />
                         </button>
-                        <button onClick={() => setDialogMute('forever')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
-                          Заглушить навсегда
-                        </button>
-                        <div className="h-px bg-border/20" />
-                        <button onClick={() => setDialogMute('off')} className="w-full text-left px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
-                          Выключить заглушение
+                        <div className="relative">
+                          <button
+                            onClick={() => setMuteMenuOpen(v => !v)}
+                            className={`p-2 rounded-xl transition-colors ${
+                              selectedDialog?.muted ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-white/5 hover:text-primary'
+                            }`}
+                            title="Заглушить чат"
+                          >
+                            <BellOff className="w-5 h-5" />
+                          </button>
+                          {muteMenuOpen && (
+                            <div
+                              className="absolute right-0 top-full mt-2 w-52 rounded-2xl glass border border-border/30 shadow-xl overflow-hidden z-40"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button onClick={() => setDialogMute('1h')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
+                                Заглушить на 1 час
+                              </button>
+                              <button onClick={() => setDialogMute('8h')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
+                                Заглушить на 8 часов
+                              </button>
+                              <button onClick={() => setDialogMute('forever')} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors">
+                                Заглушить навсегда
+                              </button>
+                              <div className="h-px bg-border/20" />
+                              <button onClick={() => setDialogMute('off')} className="w-full text-left px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">
+                                Выключить заглушение
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setDeleteConfirmation({ id: selectedUserId, type: 'CHAT' });
+                            setChatActionsOpen(false);
+                          }}
+                          className="p-2 rounded-xl hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                          title="Удалить чат"
+                        >
+                          <Trash2 className="w-5 h-5" />
                         </button>
                       </div>
                     )}
                   </div>
-                  <button 
-                    onClick={() => setDeleteConfirmation({ id: selectedUserId, type: 'CHAT' })}
-                    className="p-2 rounded-xl hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
-                    title="Удалить чат"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
                 </div>
 
                 {pinnedMessages.length > 0 && (
@@ -2022,7 +2052,7 @@ export default function MessagesPage() {
 
                 <div
                   ref={scrollContainerRef}
-                  className="flex-1 overflow-y-auto p-4 space-y-2 hide-scrollbar relative flex flex-col"
+                  className="flex-1 overflow-y-auto p-2.5 sm:p-4 space-y-2 hide-scrollbar relative flex flex-col"
                   onScroll={() => {
                     const scroller = scrollContainerRef.current;
                     if (!scroller) return;
@@ -2176,9 +2206,9 @@ export default function MessagesPage() {
                   </div>
                 )}
 
-                <div className="p-3 border-t border-border/30 relative shrink-0">
+                <div className="p-2 sm:p-3 border-t border-border/30 relative shrink-0 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
                   {replyingToMessage && (
-                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/30 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-6 animate-in slide-in-from-bottom-2 z-20">
+                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/30 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-3 sm:px-6 animate-in slide-in-from-bottom-2 z-20">
                       <div className="flex items-center gap-3 overflow-hidden">
                         <Reply className="w-5 h-5 text-primary shrink-0" />
                         {(replyingToMessage.message_type === 'MEDIA' && replyingToMessage.media_url && !replyingToMessage.media_url.startsWith('data:video') && !replyingToMessage.media_url.includes('.mp4') && !replyingToMessage.media_url.includes('.webm')) ? (
@@ -2222,7 +2252,7 @@ export default function MessagesPage() {
                     </div>
                   )}
                   {editingMessageId && (
-                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/50 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-6 animate-in slide-in-from-bottom-2 z-20">
+                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/50 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-3 sm:px-6 animate-in slide-in-from-bottom-2 z-20">
                       <div className="flex items-center gap-2 text-primary text-[11px] font-semibold uppercase tracking-wider">
                         <Edit2 className="w-3 h-3" />
                         <span>Редактирование</span>
@@ -2259,7 +2289,7 @@ export default function MessagesPage() {
                   )}
                   
                   {showStickers && (
-                    <div className="absolute bottom-full mb-2 left-14 w-64 p-3 glass rounded-2xl border border-border/30 shadow-xl grid grid-cols-4 gap-2 z-10">
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 sm:left-14 sm:translate-x-0 w-[min(92vw,16rem)] p-3 glass rounded-2xl border border-border/30 shadow-xl grid grid-cols-4 gap-2 z-10">
                       {MOCK_STICKERS.map((sticker, idx) => (
                         <button
                           key={idx}
@@ -2271,7 +2301,7 @@ export default function MessagesPage() {
                       ))}
                     </div>
                   )}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={() => {
                         setShowAttachments(!showAttachments);
@@ -2308,7 +2338,7 @@ export default function MessagesPage() {
                     />
                     
                     {isRecording ? (
-                      <div className="flex-1 px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between">
+                      <div className="flex-1 px-3 sm:px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between">
                         <div className="flex items-center gap-2 text-red-500 animate-pulse">
                           <div className="w-2 h-2 rounded-full bg-red-500" />
                           <span className="text-sm font-medium">Запись: {formatDuration(recordingDuration)}</span>
@@ -2318,7 +2348,7 @@ export default function MessagesPage() {
                         </button>
                       </div>
                     ) : isVideoRecording ? (
-                      <div className="flex-1 px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between relative overflow-hidden">
+                      <div className="flex-1 px-3 sm:px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between relative overflow-hidden">
                         <div className="absolute inset-0 bg-red-500/10 animate-pulse pointer-events-none" />
                         <div className="flex items-center gap-2 text-red-500 z-10">
                           <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -2335,7 +2365,7 @@ export default function MessagesPage() {
                         onChange={(e) => handleTypingChanged(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && sendMessage('TEXT')}
                         placeholder="Написать сообщение..."
-                        className="flex-1 px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+                        className="flex-1 min-w-0 px-3 sm:px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/50"
                       />
                     )}
 
