@@ -26,10 +26,27 @@ enum FriendshipStatus {
   BLOCKED
 }
 
+enum MessagePermission {
+  EVERYONE
+  FRIENDS
+  NOBODY
+}
+
 enum CommentMediaType {
   TEXT
   VOICE
   NONE
+}
+
+enum CommunityType {
+  CHANNEL
+  GROUP
+}
+
+enum CommunityRole {
+  MEMBER
+  ADMIN
+  OWNER
 }
 
 // ============================================
@@ -52,10 +69,27 @@ model User {
   // Messages
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+  messageHidden    MessageHidden[]
 
   // Friendships
   friendships      Friendship[] @relation("UserFriendships")
   friendOf         Friendship[] @relation("FriendFriendships")
+
+  // Communities
+  communityMemberships CommunityMember[]
+
+  // Blocks
+  blockedUsers  UserBlock[] @relation("Blocker")
+  blockedBy     UserBlock[] @relation("Blocked")
+
+  // Pins
+  pinnedDialogs  DialogPin[]
+  pinnedMessages MessagePin[]
+
+  // Reactions & mutes
+  messageReactions MessageReaction[]
+  dialogMutes      DialogMute[]
+  dialogArchives   DialogArchive[]
 
   @@index([email])
 }
@@ -79,6 +113,11 @@ model Profile {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
+  // Privacy
+  allow_online_status Boolean @default(true)
+  allow_last_seen     Boolean @default(true)
+  allow_messages_from MessagePermission @default(FRIENDS)
+
   @@index([username])
 }
 
@@ -95,6 +134,10 @@ model Post {
   comments_count Int       @default(0)
   is_edited      Boolean   @default(false) // Флаг: был ли пост изменен
   
+  author_type    String    @default("USER") // "USER" | "COMMUNITY"
+  community_id   String?
+  community      Community? @relation(fields: [community_id], references: [id], onDelete: Cascade)
+
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
 
@@ -181,6 +224,10 @@ model Message {
   recipient_id String
   recipient    User     @relation("ReceivedMessages", fields: [recipient_id], references: [id], onDelete: Cascade)
   
+  reply_to_id  String?
+  reply_to     Message?  @relation("MessageReplies", fields: [reply_to_id], references: [id], onDelete: SetNull)
+  replies      Message[] @relation("MessageReplies")
+
   message_type MessageType @default(TEXT)
   content_text String?  @db.Text
   media_url    String?
@@ -190,9 +237,114 @@ model Message {
   is_edited    Boolean  @default(false)
   created_at   DateTime @default(now())
 
+  hiddenBy     MessageHidden[]
+  forwarded_from_id String?
+  forwarded_from    Message? @relation("ForwardedFrom", fields: [forwarded_from_id], references: [id], onDelete: SetNull)
+  forwards          Message[] @relation("ForwardedFrom")
+  pinnedBy          MessagePin[]
+  reactions         MessageReaction[]
+
   @@index([sender_id])
   @@index([recipient_id])
+  @@index([reply_to_id])
   @@index([created_at])
+  @@index([forwarded_from_id])
+}
+
+model MessageReaction {
+  id         String   @id @default(uuid())
+  message_id String
+  message    Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  emoji      String
+  created_at DateTime @default(now())
+
+  @@unique([message_id, user_id, emoji])
+  @@index([message_id])
+  @@index([user_id])
+  @@index([emoji])
+}
+
+model DialogMute {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  other_user_id String
+  muted_until   DateTime?
+  muted_forever Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@unique([user_id, other_user_id])
+  @@index([user_id])
+  @@index([other_user_id])
+  @@index([muted_until])
+}
+
+model DialogArchive {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  other_user_id String
+  archived_at   DateTime @default(now())
+
+  @@unique([user_id, other_user_id])
+  @@index([user_id])
+  @@index([other_user_id])
+  @@index([archived_at])
+}
+
+// Per-user message hiding ("delete for me")
+model MessageHidden {
+  id         String   @id @default(uuid())
+  message_id String
+  message    Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  hidden_at  DateTime @default(now())
+
+  @@unique([message_id, user_id])
+  @@index([user_id])
+  @@index([message_id])
+}
+
+model UserBlock {
+  id         String   @id @default(uuid())
+  blocker_id String
+  blocker    User     @relation("Blocker", fields: [blocker_id], references: [id], onDelete: Cascade)
+  blocked_id String
+  blocked    User     @relation("Blocked", fields: [blocked_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([blocker_id, blocked_id])
+  @@index([blocker_id])
+  @@index([blocked_id])
+}
+
+model DialogPin {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  other_user_id String
+  pinned_at     DateTime @default(now())
+
+  @@unique([user_id, other_user_id])
+  @@index([user_id])
+  @@index([other_user_id])
+}
+
+model MessagePin {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  message_id String
+  message    Message  @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  pinned_at  DateTime @default(now())
+
+  @@unique([user_id, message_id])
+  @@index([user_id])
+  @@index([message_id])
 }
 
 model Friendship {
@@ -209,4 +361,34 @@ model Friendship {
   @@unique([user_id, friend_id])
   @@index([user_id])
   @@index([friend_id])
+}
+
+model Community {
+  id          String        @id @default(uuid())
+  name        String
+  description String?       @db.Text
+  avatar_url  String?
+  cover_url   String?
+  type        CommunityType
+  
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+
+  members     CommunityMember[]
+  posts       Post[]
+}
+
+model CommunityMember {
+  id           String        @id @default(uuid())
+  community_id String
+  community    Community     @relation(fields: [community_id], references: [id], onDelete: Cascade)
+  user_id      String
+  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  role         CommunityRole @default(MEMBER)
+  joined_at    DateTime      @default(now())
+
+  @@unique([community_id, user_id])
+  @@index([user_id])
+  @@index([community_id])
 }

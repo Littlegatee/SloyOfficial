@@ -15,6 +15,11 @@
         } else {
           document.documentElement.classList.remove('dark');
         }
+        
+        var accentColor = localStorage.getItem('sloy_accent_color');
+        if (accentColor) {
+          document.documentElement.style.setProperty('--primary', accentColor);
+        }
       })();
     </script>
 
@@ -27,8 +32,8 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@Sloy" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-    <script type="module" crossorigin src="/assets/index-CxpvXz-a.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-6Qe_z6vO.css">
+    <script type="module" crossorigin src="/assets/index-B6NKVKkH.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D1o3iACA.css">
   </head>
 
   <body>

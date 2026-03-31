@@ -77,7 +77,11 @@ export default function FeedPage() {
       
       socket.on('new_post', (post: any) => {
         setPosts(prev => [post, ...prev]);
-        toast.info(`Новый пост от ${post.user.profile.first_name}`);
+        const authorName =
+          post?.author_type === 'COMMUNITY'
+            ? (post?.community?.name || 'сообщества')
+            : (post?.user?.profile?.first_name || 'пользователя');
+        toast.info(`Новый пост от ${authorName}`);
       });
 
       socket.on('post_liked', ({ postId, likesCount, userId }: any) => {
@@ -111,9 +115,13 @@ export default function FeedPage() {
   const [editContent, setEditContent] = useState("");
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
+  const [recommendationType, setRecommendationType] = useState<'main' | 'friends'>('main');
+  const [myCommunities, setMyCommunities] = useState<any[]>([]);
+  const [selectedAuthor, setSelectedAuthor] = useState<{ type: 'USER' | 'COMMUNITY', id: string | null }>({ type: 'USER', id: null });
+
   const fetchPosts = async () => {
     try {
-      const { data } = await api.get("/posts");
+      const { data } = await api.get(`/posts?recommendation_type=${recommendationType}`);
       if (data && user) {
         setPosts(data.map((p: any) => ({
           ...p,
@@ -129,7 +137,16 @@ export default function FeedPage() {
 
   useEffect(() => {
     fetchPosts();
-  }, [user]);
+  }, [user, recommendationType]);
+
+  useEffect(() => {
+    // Fetch communities for author selector
+    api.get('/communities').then(res => {
+      // Only show communities where user can post (Owner or Admin in channels, anyone in groups)
+      const postable = res.data.filter((c: any) => c.type === 'GROUP' || c.role !== 'MEMBER');
+      setMyCommunities(postable);
+    }).catch(console.error);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -153,7 +170,9 @@ export default function FeedPage() {
       await api.post("/posts", { 
         content_text: newPost.trim(),
         media_url,
-        media_type: selectedImage ? "IMAGE" : "NONE"
+        media_type: selectedImage ? "IMAGE" : "NONE",
+        author_type: selectedAuthor.type,
+        community_id: selectedAuthor.id
       });
       setNewPost("");
       setSelectedImage(null);
@@ -296,7 +315,25 @@ export default function FeedPage() {
 
   return (
     <AppLayout>
-      <h2 className="text-2xl font-bold mb-6">Лента</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">Лента</h2>
+        
+        {/* Recommendation Toggle */}
+        <div className="glass-subtle p-1 rounded-2xl flex text-[11px] font-medium overflow-x-auto hide-scrollbar max-w-full">
+          <button 
+            onClick={() => setRecommendationType('main')}
+            className={`px-3 py-1.5 rounded-xl transition-all whitespace-nowrap ${recommendationType === 'main' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Главная
+          </button>
+          <button 
+            onClick={() => setRecommendationType('friends')}
+            className={`px-3 py-1.5 rounded-xl transition-all whitespace-nowrap ${recommendationType === 'friends' ? 'bg-primary text-white shadow-md' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Друзья
+          </button>
+        </div>
+      </div>
 
       {/* Create Post */}
       <div className="glass rounded-3xl p-5 mb-6">
@@ -309,6 +346,26 @@ export default function FeedPage() {
             )}
           </div>
           <div className="flex-1">
+            {myCommunities.length > 0 && (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Автор:</span>
+                <select 
+                  value={`${selectedAuthor.type}:${selectedAuthor.id || ''}`}
+                  onChange={(e) => {
+                    const [type, id] = e.target.value.split(':');
+                    setSelectedAuthor({ type: type as 'USER' | 'COMMUNITY', id: id || null });
+                  }}
+                  className="bg-transparent text-xs font-semibold text-primary focus:outline-none cursor-pointer p-1 rounded hover:bg-white/5 transition-colors"
+                >
+                  <option value="USER:" className="bg-background text-foreground">От своего имени</option>
+                  {myCommunities.map(c => (
+                    <option key={c.id} value={`COMMUNITY:${c.id}`} className="bg-background text-foreground">
+                      {c.type === 'CHANNEL' ? '📢' : '👥'} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <textarea
               value={newPost}
               onChange={(e) => setNewPost(e.target.value)}
@@ -397,18 +454,40 @@ export default function FeedPage() {
 
               <div 
                 className="flex items-center gap-3 mb-3 cursor-pointer"
-                onClick={() => navigate(`/profile/${post.user_id}`)}
+                onClick={() => {
+                  if ((post as any).author_type === 'COMMUNITY' && (post as any).community_id) {
+                    navigate(`/communities/${(post as any).community_id}`);
+                    return;
+                  }
+                  navigate(`/profile/${post.user_id}`);
+                }}
               >
                 <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm overflow-hidden">
-                  {post.user.profile.avatar_url ? (
-                    <img src={post.user.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  {(post as any).author_type === 'COMMUNITY' && (post as any).community ? (
+                    (post as any).community.avatar_url ? (
+                      <img src={(post as any).community.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      (post as any).community.name.charAt(0)
+                    )
                   ) : (
-                    post.user.profile.first_name.charAt(0)
+                    post.user.profile.avatar_url ? (
+                      <img src={post.user.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      post.user.profile.first_name.charAt(0)
+                    )
                   )}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">{post.user.profile.first_name}</p>
-                  <p className="text-[11px] text-muted-foreground">@{post.user.profile.username} · {timeAgo(post.created_at)}</p>
+                  <p className="text-sm font-semibold">
+                    {(post as any).author_type === 'COMMUNITY' && (post as any).community 
+                      ? (post as any).community.name 
+                      : post.user.profile.first_name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {(post as any).author_type === 'COMMUNITY' 
+                      ? 'Сообщество' 
+                      : `@${post.user.profile.username}`} · {timeAgo(post.created_at)}
+                  </p>
                 </div>
               </div>
 

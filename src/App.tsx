@@ -9,6 +9,9 @@ import ProfilePage from "./pages/ProfilePage";
 import FriendsPage from "./pages/FriendsPage";
 import MessagesPage from "./pages/MessagesPage";
 import SettingsPage from "./pages/SettingsPage";
+import CommunitiesPage from "./pages/CommunitiesPage";
+import CommunityProfilePage from "./pages/CommunityProfilePage";
+import CommunitySettingsPage from "./pages/CommunitySettingsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +45,9 @@ function AppRoutes() {
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
+      <Route path="/communities" element={<ProtectedRoute><CommunitiesPage /></ProtectedRoute>} />
+      <Route path="/communities/:id" element={<ProtectedRoute><CommunityProfilePage /></ProtectedRoute>} />
+      <Route path="/communities/:id/settings" element={<ProtectedRoute><CommunitySettingsPage /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />

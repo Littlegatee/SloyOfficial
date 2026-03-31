@@ -1,22 +1,112 @@
 import express from 'express';
 import prisma from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { io } from '../socket.js';
 
 const router = express.Router();
 
+function stableHashToUnitInterval(input: string) {
+  // Simple deterministic hash -> [0, 1)
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  // Convert to unsigned and scale
+  return (hash >>> 0) / 4294967296;
+}
+
+function hoursSince(date: Date) {
+  return (Date.now() - date.getTime()) / 36e5;
+}
+
 // Get feed
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, async (req: any, res) => {
+  const { recommendation_type } = req.query; // 'friends', 'main'
+  const userId = req.user.id;
+
   try {
-    const posts = await prisma.post.findMany({
+    let posts = await prisma.post.findMany({
       include: {
         user: {
           include: { profile: true },
         },
+        community: true,
         likes: true,
       },
       orderBy: { created_at: 'desc' },
-      take: 50,
+      take: 100, // Fetch more to filter and recommend
     });
+
+    const friends = await prisma.friendship.findMany({
+      where: {
+        status: 'ACCEPTED',
+        OR: [{ user_id: userId }, { friend_id: userId }]
+      }
+    });
+    const friendIds = new Set(friends.map(f => f.user_id === userId ? f.friend_id : f.user_id));
+    friendIds.add(userId); // include own posts
+
+    if (recommendation_type === 'friends') {
+      // Show only friends' personal posts
+      posts = posts.filter(p => p.author_type === 'USER' && friendIds.has(p.user_id));
+    } else {
+      // Main feed: Friends, Subscribed Communities, and Recommendations
+      const myCommunities = await prisma.communityMember.findMany({
+        where: { user_id: userId },
+        select: { community_id: true }
+      });
+      const myCommunityIds = new Set(myCommunities.map(c => c.community_id));
+
+      const friendLikes = await prisma.like.findMany({
+        where: { user_id: { in: Array.from(friendIds) } },
+        select: { post_id: true }
+      });
+      const likedPostIds = new Set(friendLikes.map(l => l.post_id));
+
+      // Calculate deterministic score for recommendation:
+      // - prioritize friends + subscribed communities
+      // - boost posts that friends liked
+      // - decay by age (freshness)
+      // - small stable per-user jitter for discovery without "jumping"
+      posts.forEach(p => {
+        let score = 0;
+
+        const isFriendUserPost = p.author_type === 'USER' && friendIds.has(p.user_id);
+        const isSubscribedCommunityPost =
+          p.author_type === 'COMMUNITY' && !!p.community_id && myCommunityIds.has(p.community_id);
+        const isLikedByFriends = likedPostIds.has(p.id);
+
+        if (isFriendUserPost) score += 120;
+        if (isSubscribedCommunityPost) score += 90;
+        if (isLikedByFriends) score += 45;
+
+        // Popularity signal (very light, to avoid "rich get richer")
+        const popularity =
+          Math.min((p.likes_count || 0), 50) * 0.3 +
+          Math.min((p.comments_count || 0), 30) * 0.5;
+        score += popularity;
+
+        // Freshness decay: ~24h half-life-ish (tunable)
+        const ageHours = hoursSince(new Date(p.created_at as any));
+        const freshness = Math.exp(-ageHours / 24);
+        score += freshness * 60;
+
+        // Stable discovery jitter (0..12)
+        score += stableHashToUnitInterval(`${userId}:${p.id}`) * 12;
+
+        (p as any).score = score;
+      });
+
+      // Sort by score (desc). Tie-break by created_at desc for stability.
+      posts.sort((a: any, b: any) => b.score - a.score);
+      posts.sort((a: any, b: any) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      posts = posts.slice(0, 50); // limit back to 50
+    }
+
     res.json(posts);
   } catch (error: any) {
     console.error("GET /posts error:", error);
@@ -26,16 +116,55 @@ router.get('/', authenticateToken, async (req, res) => {
 
 // Create post
 router.post('/', authenticateToken, async (req: any, res) => {
-  const { content_text, media_type, media_url } = req.body;
+  const { content_text, media_type, media_url, author_type, community_id } = req.body;
+  const userId = req.user.id;
+  
   try {
+    const normalizedAuthorType = (author_type || 'USER') as 'USER' | 'COMMUNITY';
+
+    if (normalizedAuthorType === 'COMMUNITY' && !community_id) {
+      return res.status(400).json({ error: "Для поста от имени сообщества нужен community_id" });
+    }
+
+    // If posting as community, verify permissions
+    if (normalizedAuthorType === 'COMMUNITY' && community_id) {
+      const member = await prisma.communityMember.findUnique({
+        where: {
+          community_id_user_id: {
+            community_id,
+            user_id: userId
+          }
+        }
+      });
+
+      if (!member) {
+        return res.status(403).json({ error: "Вы не состоите в этом сообществе" });
+      }
+
+      const community = await prisma.community.findUnique({ where: { id: community_id } });
+      if (community?.type === 'CHANNEL' && member.role === 'MEMBER') {
+        return res.status(403).json({ error: "Только администраторы могут писать в канал" });
+      }
+    }
+
     const post = await prisma.post.create({
       data: {
-        user_id: req.user.id,
+        user_id: userId,
         content_text,
         media_type,
         media_url,
+        author_type: normalizedAuthorType,
+        community_id: normalizedAuthorType === 'COMMUNITY' ? (community_id as string) : null
       },
+      include: {
+        user: { include: { profile: true } },
+        community: true,
+        likes: true
+      }
     });
+
+    // Live update for feed (simple broadcast for now)
+    io.emit('new_post', post);
     res.json(post);
   } catch (error: any) {
     console.error("POST /posts error:", error);

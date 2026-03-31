@@ -46,6 +46,7 @@ export default function ProfilePage() {
         status: myProfile.status || "",
         city: myProfile.city || "",
       });
+      setLoading(false);
     } else if (effectiveUserId) {
       setLoading(true);
       api.get(`/profiles/${effectiveUserId}`)

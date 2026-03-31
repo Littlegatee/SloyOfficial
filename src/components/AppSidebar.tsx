@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun } from "lucide-react";
+import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect } from "react";
 import UserSearch from "./UserSearch";
@@ -8,6 +8,7 @@ const navItems = [
   { to: "/feed", icon: Home, label: "Лента" },
   { to: "/profile", icon: User, label: "Профиль" },
   { to: "/friends", icon: Users, label: "Друзья" },
+  { to: "/communities", icon: Layers, label: "Сообщества" },
   { to: "/messages", icon: MessageCircle, label: "Сообщения" },
   { to: "/settings", icon: Settings, label: "Настройки" },
 ];
