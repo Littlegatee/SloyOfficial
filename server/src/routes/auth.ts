@@ -78,15 +78,21 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Укажите email и пароль' });
   }
 
-  const emailNorm = String(email).trim().toLowerCase();
+  const emailRaw = String(email).trim();
+  const emailNorm = emailRaw.toLowerCase();
 
   try {
-    const user = await prisma.user.findFirst({
-      where: {
-        email: { equals: emailNorm, mode: 'insensitive' },
-      },
+    // Два шага без mode: 'insensitive' — на некоторых связках Prisma/Postgres он давал 500.
+    let user = await prisma.user.findUnique({
+      where: { email: emailNorm },
       include: { profile: true },
     });
+    if (!user && emailRaw !== emailNorm) {
+      user = await prisma.user.findUnique({
+        where: { email: emailRaw },
+        include: { profile: true },
+      });
+    }
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
