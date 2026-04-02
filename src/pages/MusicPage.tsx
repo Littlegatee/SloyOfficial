@@ -1,0 +1,780 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import AppLayout from "@/components/AppLayout";
+import api from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { Loader2, Music, Disc3, ListMusic, Upload, Trash2, Plus, Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Share2, Pin, PinOff } from "lucide-react";
+import { useI18n } from "@/i18n/I18nContext";
+import type { AppLocale } from "@/i18n/translations";
+import { useSearchParams } from "react-router-dom";
+import BlurImage from "@/components/BlurImage";
+
+type Track = {
+  id: string;
+  title: string;
+  artist: string | null;
+  file_url: string;
+  cover_url: string | null;
+  visibility: string;
+};
+
+export default function MusicPage() {
+  const { user, profile, refreshProfile } = useAuth();
+  const { t, locale, setLocale, localeLabels } = useI18n();
+  const [tab, setTab] = useState<"tracks" | "albums" | "playlists">("tracks");
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [albums, setAlbums] = useState<any[]>([]);
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [artist, setArtist] = useState("");
+  const [visibility, setVisibility] = useState<"PRIVATE" | "PUBLIC">("PRIVATE");
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const coverRef = useRef<HTMLInputElement>(null);
+  const [pendingAudio, setPendingAudio] = useState<string | null>(null);
+  const [pendingCover, setPendingCover] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const [searchParams] = useSearchParams();
+  const initialTrackId = searchParams.get("trackId");
+
+  // Player 2.0 (queue + shuffle + repeat) - пока работает в рамках "Tracks"
+  const playerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [queueSeed, setQueueSeed] = useState(0);
+  const [shuffleOn, setShuffleOn] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<"none" | "one" | "all">("none");
+  const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [durationSec, setDurationSec] = useState(0);
+  const [currentTimeSec, setCurrentTimeSec] = useState(0);
+
+  const pinnedTrackId = profile?.pinned_track_id ?? null;
+
+  const shuffledQueue = useMemo(() => {
+    if (!shuffleOn) return null;
+    const arr = [...tracks];
+    // Fisher–Yates shuffle; we reshuffle when `queueSeed` changes.
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [shuffleOn, tracks, queueSeed]);
+
+  const effectiveQueue = shuffledQueue ?? tracks;
+  const currentTrack = tracks.find((x) => x.id === currentTrackId) ?? null;
+  const currentIndex = currentTrackId ? effectiveQueue.findIndex((x) => x.id === currentTrackId) : -1;
+
+  const formatTime = (s: number) => {
+    if (!Number.isFinite(s) || s < 0) return "0:00";
+    const mm = Math.floor(s / 60);
+    const ss = Math.floor(s % 60);
+    return `${mm}:${String(ss).padStart(2, "0")}`;
+  };
+
+  const selectTrack = async (trackId: string, autoplay: boolean) => {
+    const track = tracks.find((t) => t.id === trackId);
+    setCurrentTrackId(trackId);
+    if (!autoplay) return;
+    const audio = playerAudioRef.current;
+    if (!audio || !track) return;
+    audio.src = track.file_url;
+    audio.load();
+    try {
+      await audio.play();
+    } catch {
+      toast.info("Не удалось начать воспроизведение. Нажмите Play вручную.");
+    }
+  };
+
+  const togglePlay = async () => {
+    const audio = playerAudioRef.current;
+    if (!audio) return;
+    try {
+      if (audio.paused) await audio.play();
+      else audio.pause();
+    } catch {
+      toast.info("Не удалось воспроизвести аудио.");
+    }
+  };
+
+  const playNext = () => {
+    if (!effectiveQueue.length || currentIndex < 0) return;
+    const nextIndex = currentIndex + 1;
+    if (nextIndex >= effectiveQueue.length) {
+      if (repeatMode !== "all") {
+        playerAudioRef.current?.pause();
+        return;
+      }
+      selectTrack(effectiveQueue[0].id, true);
+      return;
+    }
+    selectTrack(effectiveQueue[nextIndex].id, true);
+  };
+
+  const playPrev = () => {
+    if (!effectiveQueue.length || currentIndex < 0) return;
+    const prevIndex = currentIndex - 1;
+    if (prevIndex < 0) {
+      if (repeatMode !== "all") {
+        selectTrack(effectiveQueue[0].id, true);
+        return;
+      }
+      selectTrack(effectiveQueue[effectiveQueue.length - 1].id, true);
+      return;
+    }
+    selectTrack(effectiveQueue[prevIndex].id, true);
+  };
+
+  const handleAudioEnded = () => {
+    const audio = playerAudioRef.current;
+    if (!audio) return;
+
+    if (repeatMode === "one") {
+      audio.currentTime = 0;
+      audio.play().catch(() => undefined);
+      return;
+    }
+
+    if (!effectiveQueue.length) return;
+    const idx = currentTrackId ? effectiveQueue.findIndex((x) => x.id === currentTrackId) : -1;
+    const nextIdx = idx + 1;
+
+    if (nextIdx >= effectiveQueue.length) {
+      if (repeatMode === "all") {
+        selectTrack(effectiveQueue[0].id, true);
+      } else {
+        audio.pause();
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    selectTrack(effectiveQueue[nextIdx].id, true);
+  };
+
+  // Pick initial track from deep link
+  useEffect(() => {
+    if (!tracks.length) return;
+    if (initialTrackId && tracks.some((t) => t.id === initialTrackId)) {
+      setCurrentTrackId(initialTrackId);
+      return;
+    }
+    if (!currentTrackId) setCurrentTrackId(tracks[0].id);
+  }, [tracks, initialTrackId]); // intentionally ignore currentTrackId to avoid fighting user selection
+
+  // When tracks list changes, ensure currentTrackId still exists.
+  useEffect(() => {
+    if (!tracks.length) return;
+    if (currentTrackId && tracks.some((t) => t.id === currentTrackId)) return;
+    setCurrentTrackId(tracks[0].id);
+  }, [tracks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the audio element in sync with currentTrackId (without auto-play).
+  useEffect(() => {
+    const audio = playerAudioRef.current;
+    if (!audio) return;
+    if (!currentTrack) return;
+    audio.src = currentTrack.file_url;
+    audio.load();
+    setCurrentTimeSec(0);
+    setDurationSec(0);
+  }, [currentTrackId, tracks]); // currentTrack is derived
+
+  const seekToPercent = (percent: number) => {
+    const audio = playerAudioRef.current;
+    if (!audio || !durationSec) return;
+    audio.currentTime = (durationSec * percent) / 100;
+  };
+
+  const cycleRepeat = () => {
+    setRepeatMode((m) => (m === "none" ? "one" : m === "one" ? "all" : "none"));
+  };
+
+  const toggleShuffle = () => {
+    setShuffleOn((v) => {
+      const next = !v;
+      if (next) setQueueSeed((s) => s + 1);
+      return next;
+    });
+  };
+
+  const togglePin = async (track: Track) => {
+    if (!user) return;
+    if (track.visibility !== "PUBLIC") {
+      toast.error("Закреплять можно только PUBLIC треки");
+      return;
+    }
+    const next = pinnedTrackId === track.id ? null : track.id;
+    try {
+      await api.put(`/profiles/${user.id}`, { pinned_track_id: next });
+      await refreshProfile();
+      toast.success(next ? "Трек закреплён" : "Закреп снят");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Не удалось изменить закреп");
+    }
+  };
+
+  const shareTrack = async (track: Track) => {
+    const url = `${window.location.origin}/music?trackId=${track.id}`;
+    const text = `🎵 ${track.title}${track.artist ? ` — ${track.artist}` : ""}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: track.title, text, url });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success("Ссылка скопирована");
+      } else {
+        toast.info("Поделиться не поддерживается. Скопируйте ссылку вручную.");
+      }
+    } catch {
+      // user cancelled or share failed
+    }
+  };
+
+  const load = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const [tr, al, pl] = await Promise.all([
+        api.get("/music/tracks"),
+        api.get("/music/albums"),
+        api.get("/music/playlists"),
+      ]);
+      setTracks(tr.data || []);
+      setAlbums(al.data || []);
+      setPlaylists(pl.data || []);
+    } catch {
+      toast.error("Не удалось загрузить музыку");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    if (user) refreshProfile();
+  }, [user, refreshProfile]); // keep pinned track state fresh
+
+  const readFile = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+
+  const handleUpload = async () => {
+    if (!pendingAudio || !title.trim()) {
+      toast.error("Выберите файл и название");
+      return;
+    }
+    setUploading(true);
+    try {
+      await api.post("/music/tracks", {
+        title: title.trim(),
+        artist: artist.trim() || null,
+        file_url: pendingAudio,
+        cover_url: pendingCover,
+        visibility,
+      });
+      toast.success("Трек добавлен");
+      setUploadOpen(false);
+      setTitle("");
+      setArtist("");
+      setPendingAudio(null);
+      setPendingCover(null);
+      if (audioInputRef.current) audioInputRef.current.value = "";
+      if (coverRef.current) coverRef.current.value = "";
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Ошибка загрузки");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeTrack = async (id: string) => {
+    if (!confirm("Удалить трек?")) return;
+    try {
+      await api.delete(`/music/tracks/${id}`);
+      await load();
+    } catch {
+      toast.error("Не удалось удалить");
+    }
+  };
+
+  const createAlbum = async () => {
+    const name = prompt("Название альбома");
+    if (!name?.trim()) return;
+    try {
+      await api.post("/music/albums", { title: name.trim() });
+      toast.success("Альбом создан");
+      await load();
+    } catch {
+      toast.error("Ошибка");
+    }
+  };
+
+  const createPlaylist = async () => {
+    const name = prompt("Название плейлиста");
+    if (!name?.trim()) return;
+    try {
+      await api.post("/music/playlists", { title: name.trim(), is_public: false });
+      toast.success("Плейлист создан");
+      await load();
+    } catch {
+      toast.error("Ошибка");
+    }
+  };
+
+  const addTrackToAlbum = async (albumId: string) => {
+    const tid = prompt("ID трека (из списка треков)");
+    if (!tid?.trim()) return;
+    try {
+      await api.post(`/music/albums/${albumId}/tracks`, { track_id: tid.trim() });
+      toast.success("Добавлено");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Ошибка");
+    }
+  };
+
+  const addTrackToPlaylist = async (plId: string) => {
+    const tid = prompt("ID трека");
+    if (!tid?.trim()) return;
+    try {
+      await api.post(`/music/playlists/${plId}/tracks`, { track_id: tid.trim() });
+      toast.success("Добавлено");
+      await load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Ошибка");
+    }
+  };
+
+  return (
+    <AppLayout>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <Music className="w-7 h-7 text-primary" />
+          {t("music.title")}
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-muted-foreground sr-only">Locale</label>
+          <select
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as AppLocale)}
+            className="px-3 py-2 rounded-xl glass text-xs bg-background border border-border"
+          >
+            {(Object.keys(localeLabels) as AppLocale[]).map((loc) => (
+              <option key={loc} value={loc}>
+                {localeLabels[loc]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setUploadOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-2xl btn-gradient text-sm font-medium"
+          >
+            <Upload className="w-4 h-4" />
+            {t("music.upload")}
+          </button>
+        </div>
+      </div>
+
+      {tab === "tracks" && tracks.length > 0 && currentTrack ? (
+        <div className="mb-6 glass rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            {currentTrack.cover_url ? (
+              <div className="w-14 h-14 rounded-xl overflow-hidden bg-muted">
+                <BlurImage src={currentTrack.cover_url} alt="Обложка" className="w-full h-full" objectFit="cover" />
+              </div>
+            ) : (
+              <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center">
+                <Music className="w-6 h-6 text-muted-foreground" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold truncate">{currentTrack.title}</p>
+              <p className="text-xs text-muted-foreground truncate">{currentTrack.artist || "—"}</p>
+              {pinnedTrackId === currentTrack.id ? (
+                <p className="text-[10px] text-primary mt-1 font-medium">Закреплённый трек</p>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={playPrev}
+                className="p-2 rounded-xl bg-accent hover:bg-accent/70 text-foreground"
+                title="Предыдущий"
+              >
+                <SkipBack className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={togglePlay}
+                className="p-2 rounded-xl btn-gradient text-white"
+                title="Play"
+              >
+                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={playNext}
+                className="p-2 rounded-xl bg-accent hover:bg-accent/70 text-foreground"
+                title="Следующий"
+              >
+                <SkipForward className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={durationSec ? Math.min((currentTimeSec / durationSec) * 100, 100) : 0}
+              onChange={(e) => seekToPercent(Number(e.target.value))}
+              className="w-full"
+            />
+            <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+              {formatTime(currentTimeSec)} / {formatTime(durationSec)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={toggleShuffle}
+              className={`p-2 rounded-xl ${shuffleOn ? "bg-primary/10 text-primary" : "bg-accent hover:bg-accent/70 text-foreground"}`}
+              title="Shuffle"
+            >
+              <Shuffle className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={cycleRepeat}
+              className={`p-2 rounded-xl ${repeatMode !== "none" ? "bg-primary/10 text-primary" : "bg-accent hover:bg-accent/70 text-foreground"}`}
+              title="Repeat"
+            >
+              {repeatMode === "one" ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => togglePin(currentTrack)}
+              className="p-2 rounded-xl bg-accent hover:bg-accent/70 text-foreground"
+              title="Pin"
+            >
+              {pinnedTrackId === currentTrack.id ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => shareTrack(currentTrack)}
+              className="p-2 rounded-xl bg-accent hover:bg-accent/70 text-foreground"
+              title="Share"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex gap-2 mb-6">
+        {(
+          [
+            ["tracks", "music.tracks", Music],
+            ["albums", "music.albums", Disc3],
+            ["playlists", "music.playlists", ListMusic],
+          ] as const
+        ).map(([id, key, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-medium transition-all ${
+              tab === id ? "btn-gradient" : "glass text-muted-foreground"
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            {t(key)}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      ) : (
+        <>
+          {tab === "tracks" && (
+            <div className="space-y-3">
+              {tracks.length === 0 ? (
+                <p className="text-muted-foreground text-sm">{t("music.empty")}</p>
+              ) : (
+                tracks.map((tr) => (
+                  <div
+                    key={tr.id}
+                    className={`glass rounded-2xl p-4 flex flex-wrap items-center gap-4 ${
+                      currentTrackId === tr.id ? "border border-primary/30 bg-accent/20" : ""
+                    }`}
+                  >
+                    {tr.cover_url ? (
+                      <BlurImage
+                        src={tr.cover_url}
+                        alt=""
+                        className="w-14 h-14 rounded-xl overflow-hidden"
+                        objectFit="cover"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center">
+                        <Music className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{tr.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{tr.artist || "—"}</p>
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {tr.visibility === "PUBLIC" ? t("music.public") : t("music.private")} · id:{" "}
+                        <code className="select-all">{tr.id}</code>
+                        {pinnedTrackId === tr.id ? (
+                          <span className="ml-2 text-primary font-medium">Закреплён</span>
+                        ) : null}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentTrackId === tr.id) togglePlay();
+                          else selectTrack(tr.id, true);
+                        }}
+                        className="p-2 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary"
+                        title="Play"
+                      >
+                        {currentTrackId === tr.id && isPlaying ? (
+                          <Pause className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => shareTrack(tr)}
+                        className="p-2 rounded-xl hover:bg-accent text-muted-foreground"
+                        title="Share"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePin(tr)}
+                        className="p-2 rounded-xl hover:bg-accent text-muted-foreground"
+                        title={pinnedTrackId === tr.id ? "Unpin" : "Pin"}
+                      >
+                        {pinnedTrackId === tr.id ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeTrack(tr.id)}
+                      className="p-2 rounded-xl text-destructive hover:bg-destructive/10"
+                      title="Удалить трек"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {tab === "albums" && (
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={createAlbum}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl glass text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                {t("music.createAlbum")}
+              </button>
+              {albums.map((a) => (
+                <div key={a.id} className="glass rounded-2xl p-4">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <p className="font-semibold">{a.title}</p>
+                      <p className="text-[10px] text-muted-foreground">id: {a.id}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addTrackToAlbum(a.id)}
+                      className="text-xs text-primary"
+                    >
+                      {t("music.addToAlbum")}
+                    </button>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    {(a.tracks || []).map((row: any) => (
+                      <li key={row.id}>
+                        {row.track?.title} — {row.track?.artist || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === "playlists" && (
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={createPlaylist}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl glass text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                {t("music.createPlaylist")}
+              </button>
+              {playlists.map((p) => (
+                <div key={p.id} className="glass rounded-2xl p-4">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <p className="font-semibold">{p.title}</p>
+                      <p className="text-[10px] text-muted-foreground">id: {p.id}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addTrackToPlaylist(p.id)}
+                      className="text-xs text-primary"
+                    >
+                      {t("music.addToPlaylist")}
+                    </button>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    {(p.tracks || []).map((row: any) => (
+                      <li key={row.id}>
+                        {row.track?.title} — {row.track?.artist || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <audio
+        ref={playerAudioRef}
+        preload="none"
+        style={{ display: "none" }}
+        src={currentTrack?.file_url}
+        onTimeUpdate={(e) => setCurrentTimeSec(e.currentTarget.currentTime || 0)}
+        onLoadedMetadata={(e) => setDurationSec(e.currentTarget.duration || 0)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={handleAudioEnded}
+      />
+
+      {uploadOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+          <div className="bg-card w-full max-w-md rounded-3xl p-6 border border-border shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-lg">{t("music.upload")}</h3>
+            <input
+              type="file"
+              accept="audio/*"
+              ref={audioInputRef}
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                if (f.size > 45 * 1024 * 1024) {
+                  toast.error("Файл больше 45 МБ");
+                  return;
+                }
+                setPendingAudio(await readFile(f));
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => audioInputRef.current?.click()}
+              className="w-full py-3 rounded-2xl glass text-sm"
+            >
+              {pendingAudio ? "Аудио выбрано" : "Выбрать файл с устройства"}
+            </button>
+            <input
+              type="file"
+              accept="image/*"
+              ref={coverRef}
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                setPendingCover(await readFile(f));
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => coverRef.current?.click()}
+              className="w-full py-2 rounded-xl glass text-xs text-muted-foreground"
+            >
+              {t("music.cover")} (необязательно)
+            </button>
+            <div>
+              <label className="text-xs text-muted-foreground">{t("music.titleLabel")}</label>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full mt-1 px-4 py-2 rounded-xl bg-background border border-border"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">{t("music.artist")}</label>
+              <input
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                className="w-full mt-1 px-4 py-2 rounded-xl bg-background border border-border"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">{t("music.visibility")}</label>
+              <select
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as "PRIVATE" | "PUBLIC")}
+                className="w-full mt-1 px-4 py-2 rounded-xl bg-background border border-border"
+              >
+                <option value="PRIVATE">{t("music.private")}</option>
+                <option value="PUBLIC">{t("music.public")}</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setUploadOpen(false)}
+                className="flex-1 py-3 rounded-2xl glass"
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={handleUpload}
+                className="flex-1 py-3 rounded-2xl btn-gradient disabled:opacity-50"
+              >
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t("common.save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AppLayout>
+  );
+}

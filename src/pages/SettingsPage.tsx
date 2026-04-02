@@ -1,13 +1,23 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Loader2, Moon, Sun, Monitor, Bell, Shield, User, Lock, Eye, ChevronRight, Camera, Image as ImageIcon, Palette, LogOut, Check, ArrowLeft } from "lucide-react";
+import { Save, Loader2, Moon, Sun, Monitor, Bell, Shield, User, ChevronRight, Camera, Image as ImageIcon, Palette, LogOut, Check, ArrowLeft, Languages, BadgeCheck } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n/I18nContext";
+import type { AppLocale } from "@/i18n/translations";
+import {
+  registerPushNotifications,
+  sendPushTestNotification,
+  unregisterPushNotifications,
+} from "@/lib/pushNotifications";
 
 export default function SettingsPage() {
   const { user, profile, refreshProfile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"profile" | "appearance" | "privacy" | "notifications">("profile");
+  const { t, locale, setLocale, localeLabels } = useI18n();
+  const [activeTab, setActiveTab] = useState<
+    "profile" | "appearance" | "privacy" | "notifications" | "language" | "admin"
+  >("profile");
 
   // Profile Form
   const [firstName, setFirstName] = useState(profile?.first_name || "");
@@ -22,14 +32,30 @@ export default function SettingsPage() {
   const [globalWallpaper, setGlobalWallpaper] = useState<string | null>(null);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
 
-  // Privacy State (Mocked)
-  const [privacySettings, setPrivacySettings] = useState({
-    phoneNumber: "nobody",
-    lastSeen: "contacts",
-    profilePhoto: "everyone",
-    messages: "everyone",
-    calls: "contacts",
-  });
+  const [profileVisibility, setProfileVisibility] = useState<"PUBLIC" | "FRIENDS_ONLY" | "PRIVATE">("PUBLIC");
+  const [allowFriendRequests, setAllowFriendRequests] = useState(true);
+  const [privacySaving, setPrivacySaving] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminUserId, setAdminUserId] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
+
+  useEffect(() => {
+    if (!profile) return;
+    const pv = (profile as any).profile_visibility as string | undefined;
+    if (pv === "FRIENDS_ONLY" || pv === "PRIVATE" || pv === "PUBLIC") {
+      setProfileVisibility(pv);
+    }
+    if (typeof (profile as any).allow_friend_requests === "boolean") {
+      setAllowFriendRequests((profile as any).allow_friend_requests);
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    api
+      .get("/admin/me")
+      .then((r) => setIsAdmin(!!r.data?.isAdmin))
+      .catch(() => setIsAdmin(false));
+  }, []);
 
   // Notifications State (Mocked)
   const [notifications, setNotifications] = useState({
@@ -38,6 +64,43 @@ export default function SettingsPage() {
     sounds: true,
     showPreview: false,
   });
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIosDevice, setIsIosDevice] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("sloy_notifications");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") {
+          setNotifications((prev) => ({ ...prev, ...parsed }));
+        }
+      }
+    } catch {
+      // ignore corrupted local settings
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("sloy_notifications", JSON.stringify(notifications));
+  }, [notifications]);
+
+  useEffect(() => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const standalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches ||
+      (window.navigator as any).standalone === true;
+    setIsIosDevice(ios);
+    setIsStandalone(Boolean(standalone));
+
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((sub) => setPushEnabled(Boolean(sub)))
+      .catch(() => setPushEnabled(false));
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("sloy_theme") as "light" | "dark" | null;
@@ -166,27 +229,97 @@ export default function SettingsPage() {
     }
   }, []);
 
-  const savePrivacy = () => {
-    toast.success("Настройки конфиденциальности сохранены");
+  const savePrivacy = async () => {
+    if (!user) return;
+    setPrivacySaving(true);
+    try {
+      await api.patch(`/profiles/${user.id}/privacy`, {
+        profile_visibility: profileVisibility,
+        allow_friend_requests: allowFriendRequests,
+      });
+      await refreshProfile();
+      toast.success(t("settings.privacy.saved"));
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Ошибка");
+    } finally {
+      setPrivacySaving(false);
+    }
+  };
+
+  const setVerification = async (verified: boolean) => {
+    if (!adminUserId.trim()) {
+      toast.error(t("admin.userId"));
+      return;
+    }
+    setAdminBusy(true);
+    try {
+      await api.post(`/admin/users/${adminUserId.trim()}/verification`, { verified });
+      toast.success(t("admin.done"));
+      setAdminUserId("");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Ошибка");
+    } finally {
+      setAdminBusy(false);
+    }
   };
 
   const saveNotifications = () => {
-    toast.success("Настройки уведомлений сохранены");
+    toast.success("Настройки уведомлений сохранены локально");
+  };
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    try {
+      await registerPushNotifications();
+      setPushEnabled(true);
+      toast.success("Push-уведомления включены");
+    } catch (error: any) {
+      toast.error(error?.message || "Не удалось включить push");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const disablePush = async () => {
+    setPushBusy(true);
+    try {
+      await unregisterPushNotifications();
+      setPushEnabled(false);
+      toast.success("Push-уведомления выключены");
+    } catch (error: any) {
+      toast.error(error?.message || "Не удалось выключить push");
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    setPushBusy(true);
+    try {
+      await sendPushTestNotification();
+      toast.success("Тестовое уведомление отправлено");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || "Не удалось отправить тест");
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   const menuItems = [
-    { id: "profile", label: "Профиль", icon: User },
-    { id: "appearance", label: "Оформление", icon: Moon },
-    { id: "privacy", label: "Конфиденциальность", icon: Shield },
-    { id: "notifications", label: "Уведомления", icon: Bell },
-  ] as const;
+    { id: "profile" as const, labelKey: "settings.tab.profile" as const, icon: User },
+    { id: "appearance" as const, labelKey: "settings.tab.appearance" as const, icon: Moon },
+    { id: "privacy" as const, labelKey: "settings.tab.privacy" as const, icon: Shield },
+    { id: "notifications" as const, labelKey: "settings.tab.notifications" as const, icon: Bell },
+    { id: "language" as const, labelKey: "settings.tab.language" as const, icon: Languages },
+    ...(isAdmin ? [{ id: "admin" as const, labelKey: "admin.verify" as const, icon: BadgeCheck }] as const : []),
+  ];
 
   return (
     <AppLayout>
       <div className="flex flex-col md:flex-row gap-6 max-w-5xl mx-auto">
         {/* Sidebar Menu */}
         <div className="w-full md:w-64 flex-shrink-0">
-          <h2 className="text-2xl font-bold mb-6 px-2">Настройки</h2>
+          <h2 className="text-2xl font-bold mb-6 px-2">{t("settings.title")}</h2>
           <div className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -202,7 +335,7 @@ export default function SettingsPage() {
                 >
                   <div className="flex items-center gap-3">
                     <Icon className="w-5 h-5" />
-                    <span className="font-medium text-sm">{item.label}</span>
+                    <span className="font-medium text-sm">{t(item.labelKey)}</span>
                   </div>
                   <ChevronRight className="w-4 h-4 hidden md:block opacity-50" />
                 </button>
@@ -396,42 +529,105 @@ export default function SettingsPage() {
           {activeTab === "privacy" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
               <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-primary" /> Конфиденциальность
+                <Shield className="w-5 h-5 text-primary" /> {t("settings.tab.privacy")}
               </h3>
-              
-              <div className="space-y-6 max-w-xl">
-                {[
-                  { id: "phoneNumber", label: "Номер телефона", icon: Lock },
-                  { id: "lastSeen", label: "Последняя активность", icon: Eye },
-                  { id: "profilePhoto", label: "Фотография профиля", icon: User },
-                  { id: "messages", label: "Личные сообщения", icon: Bell },
-                ].map((setting) => (
-                  <div key={setting.id} className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-2xl bg-background/50 border border-border/50">
-                    <div className="flex items-center gap-3">
-                      <setting.icon className="w-5 h-5 text-muted-foreground" />
-                      <span className="font-medium text-sm">{setting.label}</span>
-                    </div>
-                    <select
-                      value={privacySettings[setting.id as keyof typeof privacySettings]}
-                      onChange={(e) => setPrivacySettings({ ...privacySettings, [setting.id]: e.target.value })}
-                      className="bg-transparent border-none text-sm text-primary font-medium focus:ring-0 cursor-pointer outline-none"
-                    >
-                      <option value="everyone">Все</option>
-                      <option value="contacts">Мои контакты</option>
-                      <option value="nobody">Никто</option>
-                    </select>
-                  </div>
-                ))}
 
-                <div className="pt-4">
-                  <button
-                    onClick={savePrivacy}
-                    className="flex items-center justify-center gap-2 w-full md:w-auto px-8 py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              <div className="space-y-6 max-w-xl">
+                <div className="p-4 rounded-2xl bg-background/50 border border-border/50 space-y-2">
+                  <p className="font-medium text-sm">{t("settings.privacy.visibility")}</p>
+                  <select
+                    value={profileVisibility}
+                    onChange={(e) =>
+                      setProfileVisibility(e.target.value as "PUBLIC" | "FRIENDS_ONLY" | "PRIVATE")
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm"
                   >
-                    <Save className="w-4 h-4" />
-                    Сохранить настройки
-                  </button>
+                    <option value="PUBLIC">{t("settings.privacy.public")}</option>
+                    <option value="FRIENDS_ONLY">{t("settings.privacy.friends")}</option>
+                    <option value="PRIVATE">{t("settings.privacy.private")}</option>
+                  </select>
                 </div>
+
+                <label className="flex items-center justify-between gap-3 p-4 rounded-2xl bg-background/50 border border-border/50 cursor-pointer">
+                  <span className="font-medium text-sm">{t("settings.privacy.friendRequests")}</span>
+                  <input
+                    type="checkbox"
+                    className="w-5 h-5 accent-primary"
+                    checked={allowFriendRequests}
+                    onChange={(e) => setAllowFriendRequests(e.target.checked)}
+                  />
+                </label>
+
+                <p className="text-xs text-muted-foreground">
+                  Личные сообщения и «онлайн» настраиваются отдельно в блоке ниже (если появится) или через
+                  существующие параметры профиля.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={savePrivacy}
+                  disabled={privacySaving}
+                  className="flex items-center justify-center gap-2 w-full md:w-auto px-8 py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {privacySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {t("settings.privacy.save")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "language" && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                <Languages className="w-5 h-5 text-primary" /> {t("settings.tab.language")}
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-xl">{t("settings.language.hint")}</p>
+              <select
+                value={locale}
+                onChange={(e) => setLocale(e.target.value as AppLocale)}
+                className="w-full max-w-md px-4 py-3 rounded-2xl bg-background border border-border text-sm"
+              >
+                {(Object.keys(localeLabels) as AppLocale[]).map((loc) => (
+                  <option key={loc} value={loc}>
+                    {localeLabels[loc]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {activeTab === "admin" && isAdmin && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                <BadgeCheck className="w-5 h-5 text-primary" /> {t("admin.verify")}
+              </h3>
+              <p className="text-xs text-muted-foreground mb-4 max-w-xl">
+                Укажите UUID пользователя (из профиля или БД). Доступ только для аккаунтов из
+                ADMIN_EMAILS в .env на сервере.
+              </p>
+              <input
+                value={adminUserId}
+                onChange={(e) => setAdminUserId(e.target.value)}
+                placeholder={t("admin.userId")}
+                className="w-full max-w-md px-4 py-3 rounded-2xl bg-background border border-border text-sm mb-4"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={adminBusy}
+                  onClick={() => setVerification(true)}
+                  className="px-6 py-2 rounded-xl btn-gradient text-sm font-medium disabled:opacity-50"
+                >
+                  {t("admin.grant")}
+                </button>
+                <button
+                  type="button"
+                  disabled={adminBusy}
+                  onClick={() => setVerification(false)}
+                  className="px-6 py-2 rounded-xl glass text-sm font-medium disabled:opacity-50"
+                >
+                  {t("admin.revoke")}
+                </button>
               </div>
             </div>
           )}
@@ -475,6 +671,46 @@ export default function SettingsPage() {
                     <Save className="w-4 h-4" />
                     Сохранить настройки
                   </button>
+                </div>
+                <div className="mt-6 p-4 rounded-2xl bg-background/50 border border-border/50">
+                  <h4 className="font-medium text-sm mb-1">Push-уведомления для iPhone/Android</h4>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Для iOS: откройте сайт в Safari -> "Поделиться" -> "На экран Домой", затем включите push ниже.
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Статус: {isStandalone ? "режим веб-приложения активен" : "открыто в браузере"} ·
+                    push {pushEnabled ? "включен" : "выключен"}
+                    {isIosDevice && !isStandalone ? " · для iPhone нужен запуск с экрана Домой" : ""}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {pushEnabled ? (
+                      <button
+                        type="button"
+                        disabled={pushBusy}
+                        onClick={disablePush}
+                        className="px-4 py-2 rounded-xl glass text-xs font-medium disabled:opacity-50"
+                      >
+                        Выключить push
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={pushBusy}
+                        onClick={enablePush}
+                        className="px-4 py-2 rounded-xl btn-gradient text-xs font-medium disabled:opacity-50"
+                      >
+                        Включить push
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={pushBusy || !pushEnabled}
+                      onClick={testPush}
+                      className="px-4 py-2 rounded-xl glass text-xs font-medium disabled:opacity-50"
+                    >
+                      Тест push
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

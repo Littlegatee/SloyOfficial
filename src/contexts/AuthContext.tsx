@@ -18,10 +18,29 @@ export interface Profile {
   cover_url: string | null;
   status: string | null;
   city: string | null;
+  country: string | null;
+  language: string | null;
+  interests: string | null;
+  gender: string | null;
+  favorite_movies: string | null;
+  favorite_games: string | null;
   birth_date: string | null;
   telegram_id: string | null;
   is_verified: boolean;
   created_at: string;
+  profile_visibility?: "PUBLIC" | "FRIENDS_ONLY" | "PRIVATE";
+  allow_friend_requests?: boolean;
+
+  // Music
+  pinned_track_id?: string | null;
+  pinned_track?: {
+    id: string;
+    title: string;
+    artist: string | null;
+    file_url: string;
+    cover_url: string | null;
+    visibility?: "PUBLIC" | "PRIVATE";
+  } | null;
 }
 
 interface AuthContextType {

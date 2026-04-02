@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { prefetchProfile } from "@/lib/prefetchData";
 
 interface FriendItem {
   id: string;
@@ -115,6 +116,8 @@ export default function FriendsPage() {
             <div 
               key={r.id} 
               className="flex items-center gap-3 p-3 rounded-2xl hover:bg-accent/50 transition-all cursor-pointer"
+              onPointerEnter={() => prefetchProfile(r.user_id)}
+              onTouchStart={() => prefetchProfile(r.user_id)}
               onClick={() => navigate(`/profile/${r.user_id}`)}
             >
               <div className="w-9 h-9 rounded-xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-xs overflow-hidden">
@@ -166,6 +169,8 @@ export default function FriendsPage() {
             <div 
               key={friend.id} 
               className="flex items-center gap-3 p-3 rounded-2xl glass transition-all hover:shadow-md cursor-pointer"
+              onPointerEnter={() => prefetchProfile(friend.friend_profile.user_id)}
+              onTouchStart={() => prefetchProfile(friend.friend_profile.user_id)}
               onClick={() => navigate(`/profile/${friend.friend_profile.user_id}`)}
             >
               <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm overflow-hidden">

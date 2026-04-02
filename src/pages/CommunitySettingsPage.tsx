@@ -3,13 +3,16 @@ import { useParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import api from "@/lib/api";
 import { toast } from "sonner";
-import { Save, ArrowLeft, Image as ImageIcon } from "lucide-react";
+import { Save, ArrowLeft, Image as ImageIcon, Shield } from "lucide-react";
 
 export default function CommunitySettingsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const [members, setMembers] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -31,12 +34,35 @@ export default function CommunitySettingsPage() {
       });
       setAvatarPreview(res.data.avatar_url);
       setCoverPreview(res.data.cover_url);
+      setMyRole(res.data.role || null);
       setLoading(false);
     }).catch(() => {
       toast.error("Ошибка загрузки");
       navigate("/communities");
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!id || myRole !== "OWNER") return;
+    setMembersLoading(true);
+    api
+      .get(`/communities/${id}/members`)
+      .then((res) => setMembers(res.data || []))
+      .catch(() => setMembers([]))
+      .finally(() => setMembersLoading(false));
+  }, [id, myRole]);
+
+  const updateMemberRole = async (userId: string, role: string) => {
+    if (!id) return;
+    try {
+      await api.patch(`/communities/${id}/members/${userId}`, { role });
+      toast.success("Роль обновлена");
+      const res = await api.get(`/communities/${id}/members`);
+      setMembers(res.data || []);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Не удалось изменить роль");
+    }
+  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>, type: 'avatar' | 'cover') => {
     if (e.target.files && e.target.files[0]) {
@@ -167,6 +193,51 @@ export default function CommunitySettingsPage() {
             Сохранить изменения
           </button>
         </div>
+
+        {myRole === "OWNER" && (
+          <div className="glass p-6 rounded-3xl space-y-4 mt-6">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Shield className="w-4 h-4 text-primary" />
+              Команда сообщества
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Назначайте модераторов и администраторов. Владелец может в любой момент понизить роль до участника.
+            </p>
+            {membersLoading ? (
+              <div className="flex justify-center py-6 text-muted-foreground text-sm">Загрузка…</div>
+            ) : (
+              <div className="space-y-3">
+                {members
+                  .filter((m) => m.role !== "OWNER")
+                  .map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between py-2 border-b border-border/40 last:border-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {m.user?.profile?.first_name} @{m.user?.profile?.username}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">ID: {m.user_id}</p>
+                      </div>
+                      <select
+                        value={m.role}
+                        onChange={(e) => updateMemberRole(m.user_id, e.target.value)}
+                        className="px-3 py-2 rounded-xl glass text-xs bg-background border border-border max-w-[200px]"
+                      >
+                        <option value="MEMBER">Участник</option>
+                        <option value="MODERATOR">Модератор</option>
+                        <option value="ADMIN">Администратор</option>
+                      </select>
+                    </div>
+                  ))}
+                {members.filter((m) => m.role !== "OWNER").length === 0 && (
+                  <p className="text-xs text-muted-foreground">Нет других участников</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </AppLayout>
   );

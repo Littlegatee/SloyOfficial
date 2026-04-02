@@ -3,6 +3,8 @@ import { Send, ArrowLeft, Loader2, Mic, Square, Smile, Play, Pause, Search, X, P
 import AppLayout from "@/components/AppLayout";
 import { useAuth, Profile } from "@/contexts/AuthContext";
 import api from "@/lib/api";
+import { prefetchChatForUser } from "@/lib/prefetchData";
+import BlurImage from "@/components/BlurImage";
 import { socket } from "@/lib/socket";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
@@ -55,6 +57,17 @@ interface ChatMessage {
   };
   created_at: string;
   forwarded_from_id?: string | null;
+}
+
+interface PendingOutboundMessage {
+  id: string;
+  recipient_id: string;
+  message_type: 'TEXT' | 'STICKER' | 'VOICE' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE';
+  content_text: string | null;
+  media_url: string | null;
+  voice_duration: number | null;
+  reply_to_id: string | null;
+  created_at: number;
 }
 
 // Utility to convert AudioBuffer to standard WAV Blob
@@ -139,6 +152,13 @@ export default function MessagesPage() {
   const [muteMenuOpen, setMuteMenuOpen] = useState(false);
   const [chatActionsOpen, setChatActionsOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [transportOnline, setTransportOnline] = useState<boolean>(navigator.onLine);
+  const [socketReady, setSocketReady] = useState<boolean>(socket.connected);
+  const [pendingOutboundCount, setPendingOutboundCount] = useState(0);
+  const dialogsCacheKey = useMemo(() => {
+    if (!user?.id) return null;
+    return `dialogs_cache:${user.id}`;
+  }, [user?.id]);
 
   // Search in current chat (fast UX)
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
@@ -219,6 +239,30 @@ export default function MessagesPage() {
   }, [user]);
 
   useEffect(() => {
+    const onOnline = () => {
+      setTransportOnline(true);
+      flushOutbox();
+    };
+    const onOffline = () => setTransportOnline(false);
+    const onSocketConnect = () => {
+      setSocketReady(true);
+      flushOutbox();
+    };
+    const onSocketDisconnect = () => setSocketReady(false);
+    setSocketReady(socket.connected);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    socket.on("connect", onSocketConnect);
+    socket.on("disconnect", onSocketDisconnect);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      socket.off("connect", onSocketConnect);
+      socket.off("disconnect", onSocketDisconnect);
+    };
+  }, [flushOutbox]);
+
+  useEffect(() => {
     if (!selectedUserId) return;
     setSelectedUserOnline(null);
     setSelectedUserLastSeen(null);
@@ -230,6 +274,60 @@ export default function MessagesPage() {
     if (!user?.id) return null;
     return `draft:${user.id}:${otherUserId}`;
   }, [user?.id]);
+
+  const outboxStorageKey = useCallback(() => {
+    if (!user?.id) return null;
+    return `outbox:${user.id}`;
+  }, [user?.id]);
+
+  const readOutbox = useCallback((): PendingOutboundMessage[] => {
+    const key = outboxStorageKey();
+    if (!key) return [];
+    try {
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? (JSON.parse(raw) as PendingOutboundMessage[]) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [outboxStorageKey]);
+
+  const writeOutbox = useCallback((items: PendingOutboundMessage[]) => {
+    const key = outboxStorageKey();
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify(items));
+    setPendingOutboundCount(items.length);
+  }, [outboxStorageKey]);
+
+  const enqueueOutbound = useCallback((item: Omit<PendingOutboundMessage, "id" | "created_at">) => {
+    const next: PendingOutboundMessage = {
+      ...item,
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      created_at: Date.now(),
+    };
+    const items = readOutbox();
+    items.push(next);
+    writeOutbox(items);
+  }, [readOutbox, writeOutbox]);
+
+  const flushOutbox = useCallback(async () => {
+    if (!navigator.onLine) return;
+    const items = readOutbox();
+    if (!items.length) return;
+    const failed: PendingOutboundMessage[] = [];
+    for (const item of items) {
+      try {
+        await api.post("/messages", item);
+      } catch {
+        failed.push(item);
+      }
+    }
+    writeOutbox(failed);
+    if (!failed.length && items.length > 0) {
+      fetchDialogsRef.current();
+      toast.success("Отложенные сообщения отправлены");
+    }
+  }, [readOutbox, writeOutbox]);
 
   // Drafts: restore when switching chats
   useEffect(() => {
@@ -248,6 +346,10 @@ export default function MessagesPage() {
     if (!key) return;
     localStorage.setItem(key, messageText);
   }, [messageText, selectedUserId, draftStorageKey]);
+
+  useEffect(() => {
+    setPendingOutboundCount(readOutbox().length);
+  }, [readOutbox]);
 
   // Mini profile
   const [showMiniProfile, setShowMiniProfile] = useState(false);
@@ -297,6 +399,44 @@ export default function MessagesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(String(e.target?.result || ""));
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+
+  const compressImageToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("canvas unavailable"));
+
+        const connection = (navigator as any).connection;
+        const saveData = Boolean(connection?.saveData);
+        const maxDim = saveData ? 1200 : 1800;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", saveData ? 0.74 : 0.85));
+      };
+      img.onerror = () => reject(new Error("image decode failed"));
+      fileToDataUrl(file).then((raw) => (img.src = raw)).catch(reject);
+    });
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'MEDIA' | 'FILE') => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -307,12 +447,15 @@ export default function MessagesPage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onloadend = () => {
-      const base64data = reader.result as string;
+    try {
+      const base64data =
+        type === "MEDIA" && file.type.startsWith("image/")
+          ? await compressImageToDataUrl(file)
+          : await fileToDataUrl(file);
       sendMessage(type, file.name, base64data);
-    };
+    } catch {
+      toast.error("Не удалось подготовить файл");
+    }
     setShowAttachments(false);
     
     // Reset input
@@ -340,7 +483,14 @@ export default function MessagesPage() {
           d => !d.isSaved && !(d.userId === user.id && (d.first_name === "Избранное" || d.first_name === "Saved Messages"))
         );
         const sortedRest = [...rest].sort((a, b) => (Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))));
-        setDialogs(saved ? [saved, ...sortedRest] : sortedRest);
+        const finalDialogs = saved ? [saved, ...sortedRest] : sortedRest;
+        setDialogs(finalDialogs);
+        if (dialogsCacheKey) {
+          localStorage.setItem(
+            dialogsCacheKey,
+            JSON.stringify({ ts: Date.now(), dialogs: finalDialogs })
+          );
+        }
         
         // Handle init user chat from URL
         if (initUserId) {
@@ -368,12 +518,30 @@ export default function MessagesPage() {
               console.error("Error fetching init user profile:", err);
             }
           }
-          // Remove userId from URL to avoid reopening on refresh
-          setSearchParams({});
+          // Remove userId from URL to avoid reopening on refresh (keep forwardPost etc.)
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete("userId");
+            return next;
+          });
         }
       }
     } catch (error: any) {
       console.error("Error fetching dialogs:", error?.response?.data || error);
+      if (dialogsCacheKey) {
+        try {
+          const cached = localStorage.getItem(dialogsCacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed?.dialogs)) {
+              setDialogs(parsed.dialogs);
+              toast.info("Показываем сохраненные диалоги (сеть недоступна)");
+            }
+          }
+        } catch {
+          // ignore cache parse errors
+        }
+      }
 
       // Even if dialogs list fails (400/500), still try to open the personal chat
       // so the "Написать" button works.
@@ -386,7 +554,11 @@ export default function MessagesPage() {
         } catch (err) {
           console.error("Error opening chat from URL after dialogs failure:", err);
         } finally {
-          setSearchParams({});
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete("userId");
+            return next;
+          });
         }
       } else {
         toast.error(error?.response?.data?.error || "Не удалось загрузить диалоги");
@@ -395,6 +567,29 @@ export default function MessagesPage() {
       setLoading(false);
     }
   };
+
+  const fetchDialogsRef = useRef(fetchDialogs);
+  fetchDialogsRef.current = fetchDialogs;
+
+  useEffect(() => {
+    if (!user) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      socket.connect();
+      socket.emit("join", user.id);
+      fetchDialogsRef.current();
+      flushOutbox();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    const onConnect = () => {
+      fetchDialogsRef.current();
+    };
+    socket.on("connect", onConnect);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      socket.off("connect", onConnect);
+    };
+  }, [user, flushOutbox]);
 
   const setDialogArchive = async (otherUserId: string, archived: boolean) => {
     try {
@@ -423,6 +618,40 @@ export default function MessagesPage() {
   useEffect(() => {
     fetchDialogs();
   }, [user, userIdFromUrl]);
+
+  const forwardPostDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    const fp = searchParams.get("forwardPost");
+    const uid = searchParams.get("userId");
+    if (!fp || !uid || !user || selectedUserId !== uid) return;
+    const key = `${uid}:${fp}`;
+    if (forwardPostDoneRef.current === key) return;
+    forwardPostDoneRef.current = key;
+    (async () => {
+      try {
+        const postUrl = `${window.location.origin}/p/${fp}`;
+        let snippet = "";
+        try {
+          const { data: post } = await api.get(`/posts/${fp}`);
+          snippet = (post?.content_text || "").slice(0, 400);
+        } catch {
+          /* ignore */
+        }
+        const text = `Пост в Sloy:\n${postUrl}${snippet ? `\n\n${snippet}` : ""}`;
+        await api.post("/messages", { recipient_id: uid, content_text: text });
+        toast.success("Пост отправлен");
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("forwardPost");
+          return next;
+        });
+        fetchDialogsRef.current();
+      } catch (e: any) {
+        forwardPostDoneRef.current = null;
+        toast.error(e?.response?.data?.error || "Не удалось отправить пост");
+      }
+    })();
+  }, [selectedUserId, searchParams, user, setSearchParams]);
 
   const loadMessagesPage = async (userId: string, cursor: string | null, mode: 'replace' | 'prepend') => {
     if (!user) return;
@@ -574,14 +803,15 @@ export default function MessagesPage() {
         return;
       }
 
-      const { data } = await api.post("/messages", {
+      const payload = {
         recipient_id: selectedUserId,
         message_type: type,
         content_text: textToSend,
         media_url: mediaUrl,
         voice_duration: voiceDuration,
         reply_to_id: replyingToMessage?.id || null,
-      });
+      };
+      const { data } = await api.post("/messages", payload);
       if (data) {
         setMessages(prev => [...prev, data]);
         if (type === 'TEXT') {
@@ -595,6 +825,19 @@ export default function MessagesPage() {
       }
     } catch (error: any) {
       console.error("Error sending message:", error);
+      const probablyOffline = !navigator.onLine || !error?.response;
+      if (probablyOffline) {
+        enqueueOutbound({
+          recipient_id: selectedUserId,
+          message_type: type,
+          content_text: textToSend,
+          media_url: mediaUrl,
+          voice_duration: voiceDuration,
+          reply_to_id: replyingToMessage?.id || null,
+        });
+        toast.info("Нет соединения: сообщение добавлено в очередь и отправится автоматически");
+        return;
+      }
       toast.error(error.response?.data?.error || "Ошибка при отправке сообщения");
     }
   };
@@ -1721,6 +1964,8 @@ export default function MessagesPage() {
                       <button
                         key="saved-messages"
                         onClick={() => openChat(saved.userId, saved.first_name, saved.avatar_url)}
+                        onPointerEnter={() => prefetchChatForUser(saved.userId)}
+                        onTouchStart={() => prefetchChatForUser(saved.userId)}
                         className={`w-full flex items-center gap-3 p-3.5 text-left transition-all ${
                           selectedUserId === saved.userId ? "bg-accent" : "hover:bg-accent/30"
                         }`}
@@ -1777,6 +2022,8 @@ export default function MessagesPage() {
                         <button
                           key={dialog.userId}
                           onClick={() => openChat(dialog.userId, dialog.first_name, dialog.avatar_url)}
+                          onPointerEnter={() => prefetchChatForUser(dialog.userId)}
+                          onTouchStart={() => prefetchChatForUser(dialog.userId)}
                           className={`w-full flex items-center gap-3 p-3.5 text-left transition-all group ${
                             selectedUserId === dialog.userId ? "bg-accent" : "hover:bg-accent/30"
                           }`}
@@ -1890,9 +2137,23 @@ export default function MessagesPage() {
                           </span>
                         )}
                       </p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {transportOnline ? "сеть: онлайн" : "сеть: оффлайн"} · {socketReady ? "чат: подключен" : "чат: переподключение"}
+                        {pendingOutboundCount > 0 ? ` · очередь: ${pendingOutboundCount}` : ""}
+                      </p>
                     </div>
                   </div>
                   <div className="ml-auto relative">
+                    {pendingOutboundCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={flushOutbox}
+                        className="mr-2 px-2.5 py-1 rounded-lg text-[10px] glass hover:bg-white/5"
+                        title="Отправить отложенные сообщения"
+                      >
+                        Отправить очередь
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setChatActionsOpen(v => !v);
@@ -2716,7 +2977,7 @@ export default function MessagesPage() {
                     {messages.filter(m => m.message_type === 'MEDIA').map(msg => (
                       <div 
                         key={msg.id} 
-                        className="aspect-square rounded-xl overflow-hidden bg-black/20 relative cursor-pointer"
+                        className="aspect-square rounded-xl overflow-hidden bg-black/20 relative cursor-pointer group"
                         onClick={() => {
                           if (!msg.media_url?.startsWith('data:video') && !msg.media_url?.includes('.mp4') && !msg.media_url?.includes('.webm')) {
                             setFullscreenImage(msg.media_url!);
@@ -2726,7 +2987,14 @@ export default function MessagesPage() {
                         {msg.media_url?.startsWith('data:video') || msg.media_url?.includes('.mp4') || msg.media_url?.includes('.webm') ? (
                           <video src={msg.media_url} className="w-full h-full object-cover" />
                         ) : (
-                          <img src={msg.media_url!} alt="media" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                          <div className="h-full w-full transition-transform group-hover:scale-105">
+                            <BlurImage
+                              src={msg.media_url!}
+                              alt="media"
+                              className="h-full w-full"
+                              objectFit="cover"
+                            />
+                          </div>
                         )}
                       </div>
                     ))}

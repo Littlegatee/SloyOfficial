@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { reportApiFailure } from "@/lib/monitoring";
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
@@ -13,5 +14,18 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    reportApiFailure(error, {
+      source: "api",
+      url: error?.config?.url,
+      method: error?.config?.method,
+      status: error?.response?.status,
+    });
+    return Promise.reject(error);
+  }
+);
 
 export default api;

@@ -12,9 +12,30 @@ import SettingsPage from "./pages/SettingsPage";
 import CommunitiesPage from "./pages/CommunitiesPage";
 import CommunityProfilePage from "./pages/CommunityProfilePage";
 import CommunitySettingsPage from "./pages/CommunitySettingsPage";
+import PostSharePage from "./pages/PostSharePage";
+import MusicPage from "./pages/MusicPage";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+function retryDelayWithJitter(attemptIndex: number) {
+  const cap = 30_000;
+  const base = Math.min(1000 * 2 ** attemptIndex, cap);
+  return base + Math.random() * 800;
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 2,
+      retryDelay: retryDelayWithJitter,
+      refetchOnWindowFocus: true,
+    },
+    mutations: {
+      retry: 1,
+      retryDelay: retryDelayWithJitter,
+    },
+  },
+});
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -42,6 +63,8 @@ function AppRoutes() {
       <Route path="/" element={<Navigate to="/feed" replace />} />
       <Route path="/auth" element={<PublicRoute><AuthPage /></PublicRoute>} />
       <Route path="/feed" element={<ProtectedRoute><FeedPage /></ProtectedRoute>} />
+      <Route path="/music" element={<ProtectedRoute><MusicPage /></ProtectedRoute>} />
+      <Route path="/p/:postId" element={<ProtectedRoute><PostSharePage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />

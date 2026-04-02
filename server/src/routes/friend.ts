@@ -116,6 +116,13 @@ router.post('/request/:userId', authenticateToken, async (req: any, res) => {
   }
 
   try {
+    const targetProfile = await prisma.profile.findUnique({
+      where: { user_id: targetUserId },
+    });
+    if (targetProfile && targetProfile.allow_friend_requests === false) {
+      return res.status(403).json({ error: "Пользователь не принимает заявки в друзья" });
+    }
+
     const existing = await prisma.friendship.findFirst({
       where: {
         OR: [

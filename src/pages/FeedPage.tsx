@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Heart, MessageCircle, Share2, Image as ImageIcon, Send, Loader2, Edit2, Trash2, X, MoreVertical, Maximize2 } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Heart, MessageCircle, Share2, Image as ImageIcon, Send, Loader2, Edit2, Trash2, X, MoreVertical, Maximize2, Link2, Users } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -44,10 +44,10 @@ interface PostWithAuthor {
       username: string;
       first_name: string;
       avatar_url: string | null;
+      is_verified?: boolean;
     };
   };
   liked_by_me: boolean;
-  likes: any[];
 }
 
 function timeAgo(dateStr: string) {
@@ -61,6 +61,9 @@ function timeAgo(dateStr: string) {
 }
 
 import { socket } from "@/lib/socket";
+import { getPostShareUrl } from "@/lib/postShare";
+import VerifiedBadge from "@/components/VerifiedBadge";
+import BlurImage from "@/components/BlurImage";
 
 import { useNavigate } from "react-router-dom";
 
@@ -76,7 +79,14 @@ export default function FeedPage() {
       socket.emit('join', user.id);
       
       socket.on('new_post', (post: any) => {
-        setPosts(prev => [post, ...prev]);
+        setPosts(prev => {
+          if (prev.some((p) => p.id === post.id)) return prev;
+          const row = {
+            ...post,
+            liked_by_me: post.liked_by_me ?? false,
+          };
+          return [row, ...prev];
+        });
         const authorName =
           post?.author_type === 'COMMUNITY'
             ? (post?.community?.name || 'сообщества')
@@ -95,7 +105,6 @@ export default function FeedPage() {
       return () => {
         socket.off('new_post');
         socket.off('post_liked');
-        socket.disconnect();
       };
     }
   }, [user]);
@@ -119,17 +128,61 @@ export default function FeedPage() {
   const [myCommunities, setMyCommunities] = useState<any[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState<{ type: 'USER' | 'COMMUNITY', id: string | null }>({ type: 'USER', id: null });
 
+  const [sharePost, setSharePost] = useState<PostWithAuthor | null>(null);
+  const [friendsForShare, setFriendsForShare] = useState<Array<{ friend_id: string; friend_profile: any }>>([]);
+  const [likesPostId, setLikesPostId] = useState<string | null>(null);
+  const [likesList, setLikesList] = useState<Array<{ user_id: string; user: { profile: { first_name: string; username: string; avatar_url: string | null } } }>>([]);
+  const [likesLoading, setLikesLoading] = useState(false);
+  const [isLiteMode, setIsLiteMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem("feed_lite_mode");
+    if (stored === "1") return true;
+    if (stored === "0") return false;
+    const connection = (navigator as any).connection;
+    if (connection?.saveData) return true;
+    const type = String(connection?.effectiveType || "").toLowerCase();
+    return type.includes("2g") || type === "slow-2g";
+  });
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const feedCacheKey = useMemo(
+    () => (user?.id ? `feed_cache:${user.id}:${recommendationType}` : null),
+    [user?.id, recommendationType]
+  );
+
   const fetchPosts = async () => {
     try {
-      const { data } = await api.get(`/posts?recommendation_type=${recommendationType}`);
+      const { data } = await api.get(`/posts?recommendation_type=${recommendationType}&lite_mode=${isLiteMode ? "1" : "0"}`);
       if (data && user) {
-        setPosts(data.map((p: any) => ({
-          ...p,
-          liked_by_me: p.likes.some((l: any) => l.user_id === user.id),
-        })));
+        const prepared = data.map((p: any) => ({
+            ...p,
+            liked_by_me:
+              typeof p.liked_by_me === "boolean"
+                ? p.liked_by_me
+                : p.likes?.some?.((l: any) => l.user_id === user.id) ?? false,
+          }));
+        setPosts(prepared);
+        if (feedCacheKey) {
+          localStorage.setItem(
+            feedCacheKey,
+            JSON.stringify({ ts: Date.now(), posts: prepared })
+          );
+        }
       }
     } catch (error) {
       console.error("Error fetching posts:", error);
+      if (feedCacheKey) {
+        try {
+          const cached = localStorage.getItem(feedCacheKey);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed?.posts)) {
+              setPosts(parsed.posts);
+              toast.info("Показываем сохраненную ленту (сеть недоступна)");
+            }
+          }
+        } catch {
+          // ignore cache parse errors
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -137,7 +190,33 @@ export default function FeedPage() {
 
   useEffect(() => {
     fetchPosts();
-  }, [user, recommendationType]);
+  }, [user, recommendationType, isLiteMode]);
+
+  useEffect(() => {
+    localStorage.setItem("feed_lite_mode", isLiteMode ? "1" : "0");
+  }, [isLiteMode]);
+
+  useEffect(() => {
+    const onLite = (e: Event) => {
+      const ce = e as CustomEvent<{ enabled: boolean }>;
+      if (typeof ce.detail?.enabled === "boolean") {
+        setIsLiteMode(ce.detail.enabled);
+      }
+    };
+    window.addEventListener("sloy:liteMode", onLite);
+    return () => window.removeEventListener("sloy:liteMode", onLite);
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     // Fetch communities for author selector
@@ -149,10 +228,51 @@ export default function FeedPage() {
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedImage(e.target.files[0]);
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 45 * 1024 * 1024) {
+      toast.error("Файл слишком большой (макс. 45 МБ)");
+      e.target.value = "";
+      return;
     }
+    setSelectedImage(file);
   };
+
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(String(e.target?.result || ""));
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+
+  const compressImageToDataUrl = (file: File, lite: boolean) =>
+    new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("canvas unavailable"));
+
+        const maxDim = lite ? 1280 : 1920;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", lite ? 0.75 : 0.86));
+      };
+      img.onerror = () => reject(new Error("image decode failed"));
+      fileToDataUrl(file).then((raw) => (img.src = raw)).catch(reject);
+    });
 
   const handleCreatePost = async () => {
     if ((!newPost.trim() && !selectedImage) || !user) return;
@@ -160,17 +280,18 @@ export default function FeedPage() {
     try {
       let media_url = null;
       if (selectedImage) {
-        const reader = new FileReader();
-        media_url = await new Promise((resolve) => {
-          reader.onload = (e) => resolve(e.target?.result);
-          reader.readAsDataURL(selectedImage);
-        });
+        if (selectedImage.type.startsWith("image/")) {
+          media_url = await compressImageToDataUrl(selectedImage, isLiteMode);
+        } else {
+          media_url = await fileToDataUrl(selectedImage);
+        }
       }
 
+      const isVid = selectedImage?.type.startsWith("video/");
       await api.post("/posts", { 
         content_text: newPost.trim(),
         media_url,
-        media_type: selectedImage ? "IMAGE" : "NONE",
+        media_type: selectedImage ? (isVid ? "VIDEO" : "IMAGE") : "NONE",
         author_type: selectedAuthor.type,
         community_id: selectedAuthor.id
       });
@@ -217,21 +338,66 @@ export default function FeedPage() {
     }
   };
 
-  const handleShare = async (post: PostWithAuthor) => {
-    const shareData = {
-      title: 'Sloy App',
-      text: `Пост от ${post.user.profile.first_name}:\n${post.content_text}`,
-      url: window.location.href,
-    };
-    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+  const openShare = (post: PostWithAuthor) => {
+    setSharePost(post);
+    api
+      .get("/friends")
+      .then((res) => {
+        const accepted = (res.data || []).filter((f: any) => f.status === "ACCEPTED");
+        setFriendsForShare(accepted);
+      })
+      .catch(() => setFriendsForShare([]));
+  };
+
+  const copyPostLink = async () => {
+    if (!sharePost) return;
+    const url = getPostShareUrl(sharePost.id);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Ссылка на пост скопирована");
+      setSharePost(null);
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
+
+  const sharePostNatively = async () => {
+    if (!sharePost) return;
+    const url = getPostShareUrl(sharePost.id);
+    if (navigator.share) {
       try {
-        await navigator.share(shareData);
-      } catch (e) {
-        console.error(e);
+        await navigator.share({
+          title: "Sloy",
+          text: "Посмотри этот пост",
+          url,
+        });
+        setSharePost(null);
+        return;
+      } catch {
+        // ignore and fallback to copy
       }
-    } else {
-      navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
-      toast.success("Ссылка скопирована в буфер обмена");
+    }
+    await copyPostLink();
+  };
+
+  const sendPostToFriend = (friendId: string) => {
+    if (!sharePost) return;
+    navigate(`/messages?userId=${friendId}&forwardPost=${sharePost.id}`);
+    setSharePost(null);
+    toast.success("Откройте чат — пост отправится");
+  };
+
+  const openLikesList = async (postId: string) => {
+    setLikesPostId(postId);
+    setLikesLoading(true);
+    try {
+      const { data } = await api.get(`/posts/${postId}/likes`);
+      setLikesList(data || []);
+    } catch {
+      toast.error("Не удалось загрузить список");
+      setLikesList([]);
+    } finally {
+      setLikesLoading(false);
     }
   };
 
@@ -334,6 +500,18 @@ export default function FeedPage() {
           </button>
         </div>
       </div>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <span className={`text-xs ${isOnline ? "text-muted-foreground" : "text-destructive"}`}>
+          {isOnline ? "Онлайн" : "Оффлайн: показываем кеш и экономим трафик"}
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsLiteMode((v) => !v)}
+          className="text-xs px-3 py-1.5 rounded-xl glass hover:bg-white/5"
+        >
+          {isLiteMode ? "Легкий режим: вкл" : "Легкий режим: выкл"}
+        </button>
+      </div>
 
       {/* Create Post */}
       <div className="glass rounded-3xl p-5 mb-6">
@@ -374,7 +552,17 @@ export default function FeedPage() {
             />
             {selectedImage && (
               <div className="relative inline-block mt-2">
-                <img src={URL.createObjectURL(selectedImage)} alt="Preview" className="h-20 rounded-xl object-cover" />
+                {selectedImage.type.startsWith("video/") ? (
+                  <video
+                    src={URL.createObjectURL(selectedImage)}
+                    className="max-h-40 rounded-xl bg-black/80"
+                    controls
+                    muted
+                    preload="metadata"
+                  />
+                ) : (
+                  <img src={URL.createObjectURL(selectedImage)} alt="Preview" loading="lazy" className="h-20 rounded-xl object-cover" />
+                )}
                 <button 
                   onClick={() => setSelectedImage(null)}
                   className="absolute -top-2 -right-2 p-1 bg-destructive text-destructive-foreground rounded-full"
@@ -387,14 +575,16 @@ export default function FeedPage() {
               <div>
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept="image/*,video/*" 
                   className="hidden" 
                   ref={fileInputRef} 
                   onChange={handleFileChange}
                 />
                 <button 
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="p-2 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                  title="Фото или видео"
                 >
                   <ImageIcon className="w-5 h-5" />
                 </button>
@@ -478,10 +668,13 @@ export default function FeedPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold">
+                  <p className="text-sm font-semibold flex items-center gap-1.5">
                     {(post as any).author_type === 'COMMUNITY' && (post as any).community 
                       ? (post as any).community.name 
                       : post.user.profile.first_name}
+                    {(post as any).author_type !== 'COMMUNITY' && post.user.profile.is_verified && (
+                      <VerifiedBadge className="w-4 h-4" />
+                    )}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {(post as any).author_type === 'COMMUNITY' 
@@ -518,13 +711,25 @@ export default function FeedPage() {
               )}
 
               {post.media_url && (
+                post.media_type === "VIDEO" ? (
+                  <div className="mb-4 rounded-2xl overflow-hidden bg-black/80">
+                    <video
+                      src={post.media_url}
+                      controls
+                      playsInline
+                      preload={isLiteMode ? "metadata" : "auto"}
+                      className="w-full max-h-[min(70vh,500px)] object-contain"
+                    />
+                  </div>
+                ) : (
                 <Dialog>
                   <DialogTrigger asChild>
-                    <div className="relative group cursor-zoom-in mb-4 rounded-2xl overflow-hidden">
-                      <img 
-                        src={post.media_url} 
-                        alt="" 
-                        className="w-full h-auto max-h-[500px] object-contain bg-black/5" 
+                    <div className="relative group cursor-zoom-in mb-4 rounded-2xl overflow-hidden bg-black/5">
+                      <BlurImage
+                        src={post.media_url}
+                        alt=""
+                        className="w-full max-h-[500px]"
+                        objectFit="contain"
                       />
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                         <Maximize2 className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -535,25 +740,35 @@ export default function FeedPage() {
                     <DialogTitle className="sr-only">Просмотр изображения</DialogTitle>
                     <DialogDescription className="sr-only">Полноэкранный просмотр прикрепленного изображения к посту</DialogDescription>
                     <DialogTrigger asChild>
-                      <img src={post.media_url} alt="" className="max-w-full max-h-full object-contain cursor-zoom-out" />
+                      <img src={post.media_url} alt="" loading="lazy" className="max-w-full max-h-full object-contain cursor-zoom-out" />
                     </DialogTrigger>
                     <button className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all">
                       <X className="w-6 h-6" />
                     </button>
                   </DialogContent>
                 </Dialog>
+                )
               )}
 
               <div className="flex items-center gap-6 pt-3 border-t border-border/30">
-                <button
-                  onClick={() => toggleLike(post.id, post.liked_by_me)}
-                  className={`flex items-center gap-1.5 text-xs font-medium transition-all ${
-                    post.liked_by_me ? "text-destructive" : "text-muted-foreground hover:text-destructive"
-                  }`}
-                >
-                  <Heart className={`w-4 h-4 ${post.liked_by_me ? "fill-current" : ""}`} />
-                  {post.likes_count || 0}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleLike(post.id, post.liked_by_me)}
+                    className={`flex items-center gap-1.5 text-xs font-medium transition-all ${
+                      post.liked_by_me ? "text-destructive" : "text-muted-foreground hover:text-destructive"
+                    }`}
+                  >
+                    <Heart className={`w-4 h-4 ${post.liked_by_me ? "fill-current" : ""}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openLikesList(post.id)}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground tabular-nums"
+                  >
+                    {post.likes_count || 0}
+                  </button>
+                </div>
                 <button 
                   onClick={() => toggleComments(post.id)}
                   className={`flex items-center gap-1.5 text-xs font-medium transition-all ${
@@ -564,7 +779,8 @@ export default function FeedPage() {
                   {post.comments_count || 0}
                 </button>
                 <button 
-                  onClick={() => handleShare(post)}
+                  type="button"
+                  onClick={() => openShare(post)}
                   className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-all"
                 >
                   <Share2 className="w-4 h-4" />
@@ -700,6 +916,104 @@ export default function FeedPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={!!sharePost} onOpenChange={(open) => !open && setSharePost(null)}>
+        <DialogContent className="max-w-md rounded-3xl">
+          <DialogTitle>Поделиться постом</DialogTitle>
+          <DialogDescription>
+            Скопируйте прямую ссылку на пост или отправьте её другу в личные сообщения.
+          </DialogDescription>
+          <div className="flex flex-col gap-2 mt-2">
+            <button
+              type="button"
+              onClick={copyPostLink}
+              className="flex items-center gap-2 w-full px-4 py-3 rounded-2xl glass text-sm font-medium hover:bg-white/5"
+            >
+              <Link2 className="w-4 h-4" />
+              Скопировать ссылку на пост
+            </button>
+            <button
+              type="button"
+              onClick={sharePostNatively}
+              className="flex items-center gap-2 w-full px-4 py-3 rounded-2xl glass text-sm font-medium hover:bg-white/5"
+            >
+              <Share2 className="w-4 h-4" />
+              Поделиться (системно)
+            </button>
+          </div>
+          <div className="mt-4">
+            <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5" />
+              Отправить в личные сообщения
+            </p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {friendsForShare.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Нет друзей для отправки</p>
+              ) : (
+                friendsForShare.map((f) => (
+                  <button
+                    key={f.friend_id}
+                    type="button"
+                    onClick={() => sendPostToFriend(f.friend_id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm hover:bg-white/5"
+                  >
+                    {f.friend_profile?.avatar_url ? (
+                      <img src={f.friend_profile.avatar_url} alt="" className="w-8 h-8 rounded-xl object-cover" />
+                    ) : (
+                      <span className="w-8 h-8 rounded-xl bg-gradient-subtle flex items-center justify-center text-xs font-bold">
+                        {f.friend_profile?.first_name?.charAt(0) || "?"}
+                      </span>
+                    )}
+                    <span className="truncate">
+                      {f.friend_profile?.first_name} · @{f.friend_profile?.username}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!likesPostId} onOpenChange={(open) => !open && setLikesPostId(null)}>
+        <DialogContent className="max-w-md rounded-3xl max-h-[70vh] overflow-hidden flex flex-col">
+          <DialogTitle>Лайкнули</DialogTitle>
+          <DialogDescription>Список пользователей, которым понравился пост</DialogDescription>
+          <div className="overflow-y-auto flex-1 min-h-0 -mx-2 px-2">
+            {likesLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : likesList.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Пока нет лайков</p>
+            ) : (
+              likesList.map((like) => (
+                <button
+                  key={like.user_id}
+                  type="button"
+                  onClick={() => {
+                    navigate(`/profile/${like.user_id}`);
+                    setLikesPostId(null);
+                  }}
+                  className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 text-left"
+                >
+                  {like.user?.profile?.avatar_url ? (
+                    <img src={like.user.profile.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
+                  ) : (
+                    <span className="w-10 h-10 rounded-xl bg-gradient-subtle flex items-center justify-center text-sm font-bold">
+                      {like.user?.profile?.first_name?.charAt(0) || "?"}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{like.user?.profile?.first_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{like.user?.profile?.username}</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

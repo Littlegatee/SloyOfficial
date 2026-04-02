@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { io } from '../socket.js';
+import { notifyUserByPush } from '../lib/pushNotify.js';
 
 const router = express.Router();
 
@@ -507,6 +508,18 @@ router.post('/', authenticateToken, async (req: any, res) => {
     
     // Emit to recipient
     io.to(recipient_id).emit('receive_message', message);
+    if (!isSelf) {
+      const senderProfile = await prisma.profile.findUnique({
+        where: { user_id: sender_id },
+        select: { first_name: true },
+      });
+      await notifyUserByPush(recipient_id, {
+        title: senderProfile?.first_name || "Новое сообщение",
+        body: content_text || "Новое сообщение в Sloy",
+        url: `/messages?userId=${sender_id}`,
+        tag: `chat:${sender_id}`,
+      });
+    }
 
     // Archive behavior (Telegram-like):
     // If recipient has the sender archived and chat is NOT muted => unarchive on new message.

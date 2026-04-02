@@ -20,12 +20,60 @@ function hoursSince(date: Date) {
   return (Date.now() - date.getTime()) / 36e5;
 }
 
+function sanitizePostsForClient(posts: any[], viewerId: string) {
+  return posts.map((p) => {
+    const likes = p.likes;
+    const liked_by_me = Array.isArray(likes) && likes.some((l: any) => l.user_id === viewerId);
+    const { likes: _drop, ...rest } = p;
+    return { ...rest, liked_by_me };
+  });
+}
+
 // Get feed
 router.get('/', authenticateToken, async (req: any, res) => {
-  const { recommendation_type } = req.query; // 'friends', 'main'
+  const { recommendation_type, user_id: filterUserId } = req.query; // 'friends', 'main' + profile filter
   const userId = req.user.id;
 
   try {
+    if (filterUserId) {
+      const targetId = String(filterUserId);
+      if (targetId !== userId) {
+        const targetProfile = await prisma.profile.findUnique({
+          where: { user_id: targetId },
+        });
+        if (targetProfile) {
+          const friendship = await prisma.friendship.findFirst({
+            where: {
+              status: 'ACCEPTED',
+              OR: [
+                { user_id: userId, friend_id: targetId },
+                { user_id: targetId, friend_id: userId },
+              ],
+            },
+          });
+          const isFriend = !!friendship;
+          if (
+            (targetProfile.profile_visibility === 'FRIENDS_ONLY' ||
+              targetProfile.profile_visibility === 'PRIVATE') &&
+            !isFriend
+          ) {
+            return res.json([]);
+          }
+        }
+      }
+      const raw = await prisma.post.findMany({
+        where: { user_id: targetId, author_type: 'USER' },
+        include: {
+          user: { include: { profile: true } },
+          community: true,
+          likes: true,
+        },
+        orderBy: { created_at: 'desc' },
+        take: 80,
+      });
+      return res.json(sanitizePostsForClient(raw, userId));
+    }
+
     let posts = await prisma.post.findMany({
       include: {
         user: {
@@ -35,7 +83,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
         likes: true,
       },
       orderBy: { created_at: 'desc' },
-      take: 100, // Fetch more to filter and recommend
+      take: 80,
     });
 
     const friends = await prisma.friendship.findMany({
@@ -107,7 +155,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
       posts = posts.slice(0, 50); // limit back to 50
     }
 
-    res.json(posts);
+    res.json(sanitizePostsForClient(posts, userId));
   } catch (error: any) {
     console.error("GET /posts error:", error);
     res.status(400).json({ error: error.message });
@@ -142,8 +190,9 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
 
       const community = await prisma.community.findUnique({ where: { id: community_id } });
-      if (community?.type === 'CHANNEL' && member.role === 'MEMBER') {
-        return res.status(403).json({ error: "Только администраторы могут писать в канал" });
+      const canWriteChannel = ['OWNER', 'ADMIN', 'MODERATOR'].includes(member.role as string);
+      if (community?.type === 'CHANNEL' && !canWriteChannel) {
+        return res.status(403).json({ error: "Писать в канал могут только модераторы и администраторы" });
       }
     }
 
@@ -163,11 +212,42 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
     });
 
-    // Live update for feed (simple broadcast for now)
-    io.emit('new_post', post);
-    res.json(post);
+    const sanitized = sanitizePostsForClient([post], userId)[0];
+    io.emit('new_post', sanitized);
+    res.json(sanitized);
   } catch (error: any) {
     console.error("POST /posts error:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/:id/likes', authenticateToken, async (req: any, res) => {
+  try {
+    const likes = await prisma.like.findMany({
+      where: { post_id: req.params.id },
+      include: { user: { include: { profile: true } } },
+      orderBy: { created_at: 'desc' },
+      take: 300,
+    });
+    res.json(likes);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const post = await prisma.post.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: { include: { profile: true } },
+        community: true,
+        likes: true,
+      },
+    });
+    if (!post) return res.status(404).json({ error: 'Not found' });
+    res.json(sanitizePostsForClient([post], req.user.id)[0]);
+  } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
 });
@@ -231,10 +311,23 @@ router.delete('/:id', authenticateToken, async (req: any, res: any) => {
   try {
     const post = await prisma.post.findUnique({ where: { id: req.params.id } });
     if (!post) return res.status(404).json({ error: 'Not found' });
-    if (post.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-
-    await prisma.post.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
+    const userId = req.user.id as string;
+    if (post.user_id === userId) {
+      await prisma.post.delete({ where: { id: req.params.id } });
+      return res.json({ success: true });
+    }
+    if (post.author_type === 'COMMUNITY' && post.community_id) {
+      const member = await prisma.communityMember.findUnique({
+        where: {
+          community_id_user_id: { community_id: post.community_id, user_id: userId },
+        },
+      });
+      if (member && ['OWNER', 'ADMIN', 'MODERATOR'].includes(member.role as string)) {
+        await prisma.post.delete({ where: { id: req.params.id } });
+        return res.json({ success: true });
+      }
+    }
+    return res.status(403).json({ error: 'Forbidden' });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

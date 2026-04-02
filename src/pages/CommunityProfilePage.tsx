@@ -4,8 +4,9 @@ import AppLayout from "@/components/AppLayout";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Megaphone, Users, Settings, LogOut, Image as ImageIcon, Send, Loader2, Heart, MessageCircle, Share2, X, Maximize2 } from "lucide-react";
+import { Megaphone, Users, Settings, LogOut, Image as ImageIcon, Send, Loader2, Heart, MessageCircle, Share2, X, Maximize2, Link2, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { getPostShareUrl } from "@/lib/postShare";
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -28,10 +29,31 @@ export default function CommunityProfilePage() {
   const [newPost, setNewPost] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [members, setMembers] = useState<any[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [likesPostId, setLikesPostId] = useState<string | null>(null);
+  const [likesList, setLikesList] = useState<any[]>([]);
+  const [likesLoading, setLikesLoading] = useState(false);
+  const [sharePost, setSharePost] = useState<any | null>(null);
+  const [friendsForShare, setFriendsForShare] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
   }, [id]);
+
+  useEffect(() => {
+    if (!membersOpen || !id) return;
+    setMembersLoading(true);
+    api
+      .get(`/communities/${id}/members`)
+      .then(({ data }) => setMembers(data || []))
+      .catch(() => {
+        toast.error("Не удалось загрузить участников");
+        setMembers([]);
+      })
+      .finally(() => setMembersLoading(false));
+  }, [membersOpen, id]);
 
   const fetchData = async () => {
     try {
@@ -108,13 +130,70 @@ export default function CommunityProfilePage() {
     }
   };
 
+  const toggleLikePost = async (postId: string) => {
+    try {
+      await api.post(`/posts/${postId}/like`);
+      await fetchData();
+    } catch {
+      toast.error("Не удалось выполнить действие");
+    }
+  };
+
+  const openLikesList = async (postId: string) => {
+    setLikesPostId(postId);
+    setLikesLoading(true);
+    try {
+      const { data } = await api.get(`/posts/${postId}/likes`);
+      setLikesList(data || []);
+    } catch {
+      setLikesList([]);
+    } finally {
+      setLikesLoading(false);
+    }
+  };
+
+  const openShare = (post: any) => {
+    setSharePost(post);
+    api
+      .get("/friends")
+      .then((r) => setFriendsForShare((r.data || []).filter((f: any) => f.status === "ACCEPTED")))
+      .catch(() => setFriendsForShare([]));
+  };
+
+  const copyPostLink = async () => {
+    if (!sharePost) return;
+    try {
+      await navigator.clipboard.writeText(getPostShareUrl(sharePost.id));
+      toast.success("Ссылка на пост скопирована");
+      setSharePost(null);
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
+
+  const deleteCommunityPost = async (postId: string) => {
+    if (!confirm("Удалить этот пост?")) return;
+    try {
+      await api.delete(`/posts/${postId}`);
+      toast.success("Пост удалён");
+      fetchData();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Не удалось удалить");
+    }
+  };
+
   if (loading) return <AppLayout><div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div></AppLayout>;
   if (!community) return <AppLayout><div>Сообщество не найдено</div></AppLayout>;
 
   const isMember = !!community.role;
   const myRole = community.role;
-  const canPost = myRole === 'OWNER' || myRole === 'ADMIN' || (community.type === 'GROUP' && isMember);
-  const isAdmin = myRole === 'OWNER' || myRole === 'ADMIN';
+  const canPost =
+    myRole === "OWNER" ||
+    myRole === "ADMIN" ||
+    myRole === "MODERATOR" ||
+    (community.type === "GROUP" && isMember);
+  const isAdminSettings = myRole === "OWNER" || myRole === "ADMIN";
+  const canModerate = myRole === "OWNER" || myRole === "ADMIN" || myRole === "MODERATOR";
 
   return (
     <AppLayout>
@@ -147,10 +226,16 @@ export default function CommunityProfilePage() {
                 )}
               </h1>
               <p className="text-muted-foreground text-sm max-w-xl">{community.description}</p>
-              <p className="text-xs text-muted-foreground/70 mt-2">{community._count?.members || 0} участников</p>
+              <button
+                type="button"
+                onClick={() => setMembersOpen(true)}
+                className="text-xs text-muted-foreground/70 mt-2 hover:text-primary text-left underline-offset-2 hover:underline"
+              >
+                {community._count?.members || 0} участников — смотреть список
+              </button>
             </div>
             <div className="flex gap-2">
-              {isAdmin && (
+              {isAdminSettings && (
                 <button onClick={() => navigate(`/communities/${id}/settings`)} className="p-2 rounded-xl glass hover:text-primary transition-colors">
                   <Settings className="w-5 h-5" />
                 </button>
@@ -280,37 +365,50 @@ export default function CommunityProfilePage() {
                   </Dialog>
                 )}
 
-                <div className="flex items-center gap-6 pt-3 border-t border-border/30">
+                <div className="flex items-center gap-6 pt-3 border-t border-border/30 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleLikePost(post.id)}
+                      className={`flex items-center gap-1.5 text-xs font-medium transition-all ${
+                        post.liked_by_me ? "text-destructive" : "text-muted-foreground hover:text-destructive"
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${post.liked_by_me ? "fill-current" : ""}`} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openLikesList(post.id)}
+                      className="text-xs font-medium text-muted-foreground hover:text-foreground tabular-nums"
+                    >
+                      {post.likes_count || 0}
+                    </button>
+                  </div>
                   <button
-                    onClick={() => navigate('/feed')}
+                    type="button"
+                    onClick={() => navigate("/feed")}
                     className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-all"
-                    title="Лайки и комментарии доступны в общей ленте"
-                  >
-                    <Heart className="w-4 h-4" />
-                    {post.likes_count || 0}
-                  </button>
-                  <button
-                    onClick={() => navigate('/feed')}
-                    className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-all"
-                    title="Лайки и комментарии доступны в общей ленте"
+                    title="Комментарии в общей ленте"
                   >
                     <MessageCircle className="w-4 h-4" />
                     {post.comments_count || 0}
                   </button>
                   <button
-                    onClick={async () => {
-                      const shareText = `Пост от ${community.name}:\n${post.content_text}`;
-                      try {
-                        await navigator.clipboard.writeText(shareText);
-                        toast.success("Текст поста скопирован");
-                      } catch {
-                        toast.error("Не удалось скопировать");
-                      }
-                    }}
+                    type="button"
+                    onClick={() => openShare(post)}
                     className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-primary transition-all"
                   >
                     <Share2 className="w-4 h-4" />
                   </button>
+                  {canModerate && (
+                    <button
+                      type="button"
+                      onClick={() => deleteCommunityPost(post.id)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-destructive hover:text-destructive/80 ml-auto"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -319,6 +417,134 @@ export default function CommunityProfilePage() {
           )}
         </div>
       </div>
+
+      <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
+        <DialogContent className="max-w-md rounded-3xl max-h-[70vh] overflow-hidden flex flex-col">
+          <DialogTitle>Участники</DialogTitle>
+          <DialogDescription>Нажмите на пользователя, чтобы открыть профиль</DialogDescription>
+          <div className="overflow-y-auto flex-1 min-h-0 -mx-2 px-2">
+            {membersLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : members.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">Нет участников</p>
+            ) : (
+              members.map((m: any) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    navigate(`/profile/${m.user_id}`);
+                    setMembersOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 text-left"
+                >
+                  {m.user?.profile?.avatar_url ? (
+                    <img src={m.user.profile.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
+                  ) : (
+                    <span className="w-10 h-10 rounded-xl bg-gradient-subtle flex items-center justify-center text-sm font-bold">
+                      {m.user?.profile?.first_name?.charAt(0) || "?"}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{m.user?.profile?.first_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      @{m.user?.profile?.username} · {m.role}
+                    </p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!likesPostId} onOpenChange={(o) => !o && setLikesPostId(null)}>
+        <DialogContent className="max-w-md rounded-3xl max-h-[70vh] overflow-hidden flex flex-col">
+          <DialogTitle>Лайкнули</DialogTitle>
+          <div className="overflow-y-auto flex-1 min-h-0 -mx-2 px-2">
+            {likesLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : likesList.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">Пока нет лайков</p>
+            ) : (
+              likesList.map((like: any) => (
+                <button
+                  key={like.user_id}
+                  type="button"
+                  onClick={() => {
+                    navigate(`/profile/${like.user_id}`);
+                    setLikesPostId(null);
+                  }}
+                  className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 text-left"
+                >
+                  {like.user?.profile?.avatar_url ? (
+                    <img src={like.user.profile.avatar_url} alt="" className="w-10 h-10 rounded-xl object-cover" />
+                  ) : (
+                    <span className="w-10 h-10 rounded-xl bg-gradient-subtle flex items-center justify-center text-sm font-bold">
+                      {like.user?.profile?.first_name?.charAt(0) || "?"}
+                    </span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{like.user?.profile?.first_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">@{like.user?.profile?.username}</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!sharePost} onOpenChange={(o) => !o && setSharePost(null)}>
+        <DialogContent className="max-w-md rounded-3xl">
+          <DialogTitle>Поделиться постом</DialogTitle>
+          <DialogDescription>Ссылка ведёт на страницу поста</DialogDescription>
+          <button
+            type="button"
+            onClick={copyPostLink}
+            className="flex items-center gap-2 w-full px-4 py-3 rounded-2xl glass text-sm font-medium hover:bg-white/5 mt-2"
+          >
+            <Link2 className="w-4 h-4" />
+            Скопировать ссылку
+          </button>
+          <div className="mt-4">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Отправить в личку</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {friendsForShare.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Нет друзей</p>
+              ) : (
+                friendsForShare.map((f: any) => (
+                  <button
+                    key={f.friend_id}
+                    type="button"
+                    onClick={() => {
+                      navigate(`/messages?userId=${f.friend_id}&forwardPost=${sharePost?.id}`);
+                      setSharePost(null);
+                      toast.success("Откройте чат — пост отправится");
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-sm hover:bg-white/5"
+                  >
+                    {f.friend_profile?.avatar_url ? (
+                      <img src={f.friend_profile.avatar_url} alt="" className="w-8 h-8 rounded-xl object-cover" />
+                    ) : (
+                      <span className="w-8 h-8 rounded-xl bg-gradient-subtle flex items-center justify-center text-xs font-bold">
+                        {f.friend_profile?.first_name?.charAt(0) || "?"}
+                      </span>
+                    )}
+                    <span className="truncate">
+                      {f.friend_profile?.first_name} · @{f.friend_profile?.username}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

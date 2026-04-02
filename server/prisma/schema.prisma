@@ -45,8 +45,20 @@ enum CommunityType {
 
 enum CommunityRole {
   MEMBER
+  MODERATOR
   ADMIN
   OWNER
+}
+
+enum ProfileVisibility {
+  PUBLIC
+  FRIENDS_ONLY
+  PRIVATE
+}
+
+enum MusicVisibility {
+  PRIVATE
+  PUBLIC
 }
 
 // ============================================
@@ -78,6 +90,10 @@ model User {
   // Communities
   communityMemberships CommunityMember[]
 
+  musicTracks   MusicTrack[]
+  musicAlbums   MusicAlbum[]
+  musicPlaylists Playlist[]
+
   // Blocks
   blockedUsers  UserBlock[] @relation("Blocker")
   blockedBy     UserBlock[] @relation("Blocked")
@@ -90,8 +106,23 @@ model User {
   messageReactions MessageReaction[]
   dialogMutes      DialogMute[]
   dialogArchives   DialogArchive[]
+  pushSubscriptions PushSubscription[]
 
   @@index([email])
+}
+
+model PushSubscription {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  user_agent String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([user_id])
 }
 
 model Profile {
@@ -106,6 +137,12 @@ model Profile {
   cover_url   String?
   status      String?
   city        String?
+  country     String?
+  language    String?
+  interests   String?  @db.Text
+  gender      String?
+  favorite_movies String? @db.Text
+  favorite_games  String? @db.Text
   birth_date  String?
   telegram_id String?
   is_verified Boolean  @default(false)
@@ -117,6 +154,12 @@ model Profile {
   allow_online_status Boolean @default(true)
   allow_last_seen     Boolean @default(true)
   allow_messages_from MessagePermission @default(FRIENDS)
+  profile_visibility  ProfileVisibility @default(PUBLIC)
+  allow_friend_requests Boolean @default(true)
+
+  // Music pinned track
+  pinned_track_id String?
+  pinned_track    MusicTrack? @relation("PinnedTrack", fields: [pinned_track_id], references: [id], onDelete: SetNull)
 
   @@index([username])
 }
@@ -391,4 +434,80 @@ model CommunityMember {
   @@unique([community_id, user_id])
   @@index([user_id])
   @@index([community_id])
+}
+
+model MusicTrack {
+  id           String          @id @default(uuid())
+  user_id      String
+  user         User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title        String
+  artist       String?
+  file_url     String          @db.Text
+  cover_url    String?         @db.Text
+  duration_sec Int?
+  visibility   MusicVisibility @default(PRIVATE)
+  created_at   DateTime        @default(now())
+  updated_at   DateTime        @updatedAt
+
+  albumLinks   MusicAlbumTrack[]
+  playlistLinks PlaylistTrack[]
+
+  // Profiles that pin this track
+  pinned_by    Profile[]      @relation("PinnedTrack")
+
+  @@index([user_id])
+  @@index([created_at])
+}
+
+model MusicAlbum {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title      String
+  cover_url  String?  @db.Text
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tracks MusicAlbumTrack[]
+
+  @@index([user_id])
+}
+
+model MusicAlbumTrack {
+  id       String     @id @default(uuid())
+  album_id String
+  album    MusicAlbum @relation(fields: [album_id], references: [id], onDelete: Cascade)
+  track_id String
+  track    MusicTrack @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  position Int        @default(0)
+
+  @@unique([album_id, track_id])
+  @@index([album_id])
+}
+
+model Playlist {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  title      String
+  cover_url  String?  @db.Text
+  is_public  Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tracks PlaylistTrack[]
+
+  @@index([user_id])
+}
+
+model PlaylistTrack {
+  id          String   @id @default(uuid())
+  playlist_id String
+  playlist    Playlist @relation(fields: [playlist_id], references: [id], onDelete: Cascade)
+  track_id    String
+  track       MusicTrack @relation(fields: [track_id], references: [id], onDelete: Cascade)
+  position    Int        @default(0)
+
+  @@unique([playlist_id, track_id])
+  @@index([playlist_id])
 }

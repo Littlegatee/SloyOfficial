@@ -64,6 +64,9 @@ const { default: postRoutes } = await import('./routes/post.js');
 const { default: messageRoutes } = await import('./routes/message.js');
 const { default: friendRoutes } = await import('./routes/friend.js');
 const { default: communityRoutes } = await import('./routes/community.js');
+const { default: musicRoutes } = await import('./routes/music.js');
+const { default: adminRoutes } = await import('./routes/admin.js');
+const { default: pushRoutes } = await import('./routes/push.js');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -72,6 +75,9 @@ app.use('/api/posts', postRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/communities', communityRoutes);
+app.use('/api/music', musicRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/push', pushRoutes);
 
 // Socket.io
 io.on('connection', (socket: Socket) => {

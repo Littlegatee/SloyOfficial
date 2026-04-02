@@ -1,20 +1,27 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers } from "lucide-react";
+import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect } from "react";
+import api from "@/lib/api";
+import { hasActivePushSubscription } from "@/lib/pushNotifications";
+import { useI18n } from "@/i18n/I18nContext";
+import { useState, useEffect, useRef } from "react";
 import UserSearch from "./UserSearch";
 
 const navItems = [
-  { to: "/feed", icon: Home, label: "Лента" },
-  { to: "/profile", icon: User, label: "Профиль" },
-  { to: "/friends", icon: Users, label: "Друзья" },
-  { to: "/communities", icon: Layers, label: "Сообщества" },
-  { to: "/messages", icon: MessageCircle, label: "Сообщения" },
-  { to: "/settings", icon: Settings, label: "Настройки" },
+  { to: "/feed", icon: Home, labelKey: "nav.feed" as const },
+  { to: "/profile", icon: User, labelKey: "nav.profile" as const },
+  { to: "/friends", icon: Users, labelKey: "nav.friends" as const },
+  { to: "/communities", icon: Layers, labelKey: "nav.communities" as const },
+  { to: "/messages", icon: MessageCircle, labelKey: "nav.messages" as const },
+  { to: "/music", icon: Music, labelKey: "nav.music" as const },
+  { to: "/settings", icon: Settings, labelKey: "nav.settings" as const },
 ];
 
 export default function AppSidebar() {
-  const { profile, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
+  const [messagesFallbackBadge, setMessagesFallbackBadge] = useState(false);
+  const badgeFetchAt = useRef(0);
+  const { t } = useI18n();
   const location = useLocation();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
 
@@ -24,6 +31,37 @@ export default function AppSidebar() {
     document.documentElement.classList.toggle("dark", next);
     localStorage.setItem("sloy_theme", next ? "dark" : "light");
   };
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const refreshBadge = async (force = false) => {
+      const now = Date.now();
+      if (!force && now - badgeFetchAt.current < 45_000) return;
+      badgeFetchAt.current = now;
+      try {
+        const [sub, { data: dialogs }] = await Promise.all([
+          hasActivePushSubscription(),
+          api.get("/messages/dialogs"),
+        ]);
+        if (cancelled) return;
+        const list = Array.isArray(dialogs) ? dialogs : [];
+        const total = list.reduce((s: number, d: { unreadCount?: number }) => s + (d.unreadCount || 0), 0);
+        setMessagesFallbackBadge(!sub && total > 0);
+      } catch {
+        if (!cancelled) setMessagesFallbackBadge(false);
+      }
+    };
+    refreshBadge(true);
+    const onVis = () => {
+      if (document.visibilityState === "visible") refreshBadge(false);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [user]);
 
   useEffect(() => {
     const saved = localStorage.getItem("sloy_theme");
@@ -55,8 +93,9 @@ export default function AppSidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-2 space-y-0.5">
-          {navItems.map(({ to, icon: Icon, label }) => {
+          {navItems.map(({ to, icon: Icon, labelKey }) => {
             const isActive = location.pathname === to;
+            const showMsgDot = to === "/messages" && messagesFallbackBadge;
             return (
               <NavLink
                 key={to}
@@ -67,8 +106,13 @@ export default function AppSidebar() {
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
                 }`}
               >
-                <Icon className="w-[18px] h-[18px]" />
-                {label}
+                <span className="relative inline-flex">
+                  <Icon className="w-[18px] h-[18px]" />
+                  {showMsgDot && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-destructive shadow-sm" title="Есть непрочитанные (push выключен)" />
+                  )}
+                </span>
+                {t(labelKey)}
               </NavLink>
             );
           })}
@@ -111,19 +155,25 @@ export default function AppSidebar() {
       </aside>
 
       <nav className="fixed inset-x-0 bottom-0 z-50 glass-strong border-t border-border/40 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-6 gap-1 px-2 py-2">
-          {navItems.map(({ to, icon: Icon, label }) => {
+        <div className="grid grid-cols-7 gap-0.5 px-1 py-2">
+          {navItems.map(({ to, icon: Icon, labelKey }) => {
             const isActive = location.pathname === to;
+            const showMsgDot = to === "/messages" && messagesFallbackBadge;
             return (
               <NavLink
                 key={to}
                 to={to}
-                className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2 text-[10px] transition-colors ${
+                className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[8px] transition-colors ${
                   isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                <span className="leading-none">{label}</span>
+                <span className="relative inline-flex">
+                  <Icon className="w-3.5 h-3.5" />
+                  {showMsgDot && (
+                    <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-destructive" />
+                  )}
+                </span>
+                <span className="leading-tight text-center line-clamp-2">{t(labelKey)}</span>
               </NavLink>
             );
           })}

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import api from "@/lib/api";
+import { prefetchProfile } from "@/lib/prefetchData";
 
 export default function UserSearch() {
   const [open, setOpen] = useState(false);
@@ -92,6 +93,7 @@ export default function UserSearch() {
                   <CommandItem
                     key={profile.id}
                     value={profile.username}
+                    onMouseEnter={() => prefetchProfile(profile.user_id)}
                     onSelect={() => {
                       navigate(`/profile/${profile.user_id}`);
                       setOpen(false);
