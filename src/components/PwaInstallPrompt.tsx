@@ -57,7 +57,7 @@ export default function PwaInstallPrompt() {
           <p className="font-semibold text-sm mb-1">Установить Sloy на экран домой</p>
           {isIos ? (
             <p className="text-muted-foreground">
-              В Safari нажмите "Поделиться" -> "На экран Домой". После установки заработают iOS push.
+              В Safari нажмите "Поделиться", затем "На экран Домой". После установки заработают iOS push.
             </p>
           ) : (
             <p className="text-muted-foreground">
