@@ -38,7 +38,10 @@ function scheduleFlush() {
 export function flushTelemetry() {
   if (!queue.length) return;
   const batch = queue.splice(0, BATCH_MAX);
-  console.error("[telemetry-batch]", batch);
+  // В проде не шумим console.error — это не падение приложения, а очередь событий.
+  if (import.meta.env.DEV) {
+    console.error("[telemetry-batch]", batch);
+  }
 }
 
 function enqueue(item: TelemetryItem) {
