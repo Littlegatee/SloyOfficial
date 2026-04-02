@@ -232,44 +232,6 @@ export default function MessagesPage() {
     }
   }, [pinnedMessages, selectedUserId]);
 
-  useEffect(() => {
-    if (!user) return;
-    socket.connect();
-    socket.emit('join', user.id);
-  }, [user]);
-
-  useEffect(() => {
-    const onOnline = () => {
-      setTransportOnline(true);
-      flushOutbox();
-    };
-    const onOffline = () => setTransportOnline(false);
-    const onSocketConnect = () => {
-      setSocketReady(true);
-      flushOutbox();
-    };
-    const onSocketDisconnect = () => setSocketReady(false);
-    setSocketReady(socket.connected);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    socket.on("connect", onSocketConnect);
-    socket.on("disconnect", onSocketDisconnect);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-      socket.off("connect", onSocketConnect);
-      socket.off("disconnect", onSocketDisconnect);
-    };
-  }, [flushOutbox]);
-
-  useEffect(() => {
-    if (!selectedUserId) return;
-    setSelectedUserOnline(null);
-    setSelectedUserLastSeen(null);
-    setTypingFromOther(false);
-    socket.emit('presence_request', { userIds: [selectedUserId] });
-  }, [selectedUserId]);
-
   const draftStorageKey = useCallback((otherUserId: string) => {
     if (!user?.id) return null;
     return `draft:${user.id}:${otherUserId}`;
@@ -310,6 +272,8 @@ export default function MessagesPage() {
     writeOutbox(items);
   }, [readOutbox, writeOutbox]);
 
+  const fetchDialogsRef = useRef<() => Promise<void>>(async () => undefined);
+
   const flushOutbox = useCallback(async () => {
     if (!navigator.onLine) return;
     const items = readOutbox();
@@ -328,6 +292,44 @@ export default function MessagesPage() {
       toast.success("Отложенные сообщения отправлены");
     }
   }, [readOutbox, writeOutbox]);
+
+  useEffect(() => {
+    if (!user) return;
+    socket.connect();
+    socket.emit('join', user.id);
+  }, [user]);
+
+  useEffect(() => {
+    const onOnline = () => {
+      setTransportOnline(true);
+      flushOutbox();
+    };
+    const onOffline = () => setTransportOnline(false);
+    const onSocketConnect = () => {
+      setSocketReady(true);
+      flushOutbox();
+    };
+    const onSocketDisconnect = () => setSocketReady(false);
+    setSocketReady(socket.connected);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    socket.on("connect", onSocketConnect);
+    socket.on("disconnect", onSocketDisconnect);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      socket.off("connect", onSocketConnect);
+      socket.off("disconnect", onSocketDisconnect);
+    };
+  }, [flushOutbox]);
+
+  useEffect(() => {
+    if (!selectedUserId) return;
+    setSelectedUserOnline(null);
+    setSelectedUserLastSeen(null);
+    setTypingFromOther(false);
+    socket.emit('presence_request', { userIds: [selectedUserId] });
+  }, [selectedUserId]);
 
   // Drafts: restore when switching chats
   useEffect(() => {
@@ -568,7 +570,6 @@ export default function MessagesPage() {
     }
   };
 
-  const fetchDialogsRef = useRef(fetchDialogs);
   fetchDialogsRef.current = fetchDialogs;
 
   useEffect(() => {

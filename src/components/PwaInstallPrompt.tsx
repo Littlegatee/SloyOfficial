@@ -21,6 +21,7 @@ export default function PwaInstallPrompt() {
   }, []);
 
   useEffect(() => {
+    // Chrome may log a hint until the user clicks «Установить» and we call prompt() — expected.
     const onBeforeInstallPrompt = (event: Event) => {
       event.preventDefault();
       setDeferredPrompt(event as BeforeInstallPromptEvent);

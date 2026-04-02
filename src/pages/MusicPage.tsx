@@ -238,9 +238,9 @@ export default function MusicPage() {
     setLoading(true);
     try {
       const [tr, al, pl] = await Promise.all([
-        api.get("/music/tracks"),
-        api.get("/music/albums"),
-        api.get("/music/playlists"),
+        api.get("/music/tracks").catch(() => ({ data: [] })),
+        api.get("/music/albums").catch(() => ({ data: [] })),
+        api.get("/music/playlists").catch(() => ({ data: [] })),
       ]);
       setTracks(tr.data || []);
       setAlbums(al.data || []);

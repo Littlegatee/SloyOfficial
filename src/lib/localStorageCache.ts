@@ -2,7 +2,51 @@
 
 const CACHE_KEY_PREFIXES = ["feed_cache:", "dialogs_cache:"] as const;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_MAX_TOTAL_BYTES = 2_500_000;
+const DEFAULT_MAX_TOTAL_BYTES = 1_800_000;
+
+/** Strip heavy fields from feed posts so cache fits in ~5MB localStorage budget. */
+export function stripFeedPostsForCache(posts: unknown[]): unknown[] {
+  return posts.map((raw) => {
+    const p = raw as Record<string, unknown>;
+    const u = p.user as Record<string, unknown> | undefined;
+    const prof = u?.profile as Record<string, unknown> | undefined;
+    const comm = p.community as Record<string, unknown> | undefined;
+    return {
+      id: p.id,
+      content_text: p.content_text,
+      media_type: p.media_type,
+      media_url: p.media_url,
+      likes_count: p.likes_count,
+      comments_count: p.comments_count,
+      created_at: p.created_at,
+      updated_at: p.updated_at,
+      is_edited: p.is_edited,
+      liked_by_me: p.liked_by_me,
+      author_type: p.author_type,
+      community_id: p.community_id,
+      community: comm
+        ? {
+            id: comm.id,
+            name: comm.name,
+            avatar_url: comm.avatar_url,
+          }
+        : undefined,
+      user: u
+        ? {
+            id: u.id,
+            profile: prof
+              ? {
+                  username: prof.username,
+                  first_name: prof.first_name,
+                  last_name: prof.last_name,
+                  avatar_url: prof.avatar_url,
+                }
+              : undefined,
+          }
+        : undefined,
+    };
+  });
+}
 
 function keyIsManaged(key: string) {
   return CACHE_KEY_PREFIXES.some((p) => key.startsWith(p));

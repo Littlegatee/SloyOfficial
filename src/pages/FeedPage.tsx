@@ -3,6 +3,11 @@ import { Heart, MessageCircle, Share2, Image as ImageIcon, Send, Loader2, Edit2,
 import AppLayout from "@/components/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
+import {
+  enforceLocalStorageBudget,
+  runLocalStorageCacheMaintenance,
+  stripFeedPostsForCache,
+} from "@/lib/localStorageCache";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -161,10 +166,23 @@ export default function FeedPage() {
           }));
         setPosts(prepared);
         if (feedCacheKey) {
-          localStorage.setItem(
-            feedCacheKey,
-            JSON.stringify({ ts: Date.now(), posts: prepared })
-          );
+          try {
+            runLocalStorageCacheMaintenance();
+            enforceLocalStorageBudget();
+            const slim = stripFeedPostsForCache(prepared);
+            localStorage.setItem(feedCacheKey, JSON.stringify({ ts: Date.now(), posts: slim }));
+          } catch (e) {
+            if (e instanceof DOMException && e.name === "QuotaExceededError") {
+              try {
+                localStorage.removeItem(feedCacheKey);
+                enforceLocalStorageBudget(1_000_000);
+                const slim = stripFeedPostsForCache(prepared);
+                localStorage.setItem(feedCacheKey, JSON.stringify({ ts: Date.now(), posts: slim }));
+              } catch {
+                /* ignore — offline cache is best-effort */
+              }
+            }
+          }
         }
       }
     } catch (error) {
