@@ -1,0 +1,38 @@
+{
+  "name": "Sloy",
+  "short_name": "Sloy",
+  "id": "/",
+  "start_url": "/feed",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1020",
+  "theme_color": "#7c3aed",
+  "description": "Sloy social web app",
+  "shortcuts": [
+    {
+      "name": "Лента",
+      "short_name": "Лента",
+      "url": "/feed"
+    },
+    {
+      "name": "Сообщения",
+      "short_name": "Чаты",
+      "url": "/messages"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/placeholder.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/placeholder.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
