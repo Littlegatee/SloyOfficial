@@ -5,6 +5,16 @@ import prisma from '../prisma.js';
 
 const router = express.Router();
 
+function signUserToken(user: { id: string; email: string }) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || String(secret).trim() === '') {
+    const e = new Error('JWT_SECRET_MISSING');
+    (e as any).statusCode = 503;
+    throw e;
+  }
+  return jwt.sign({ id: user.id, email: user.email }, secret, { expiresIn: '7d' });
+}
+
 // Register
 router.post('/register', async (req, res) => {
   const { email, password, username, first_name, last_name } = req.body || {};
@@ -13,17 +23,20 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Нужны email, пароль, никнейм и имя' });
   }
 
+  const emailNorm = String(email).trim().toLowerCase();
+  const usernameNorm = String(username).trim();
+
   try {
     const hashedPassword = await bcrypt.hash(String(password), 10);
     const user = await prisma.user.create({
       data: {
-        email,
+        email: emailNorm,
         password: hashedPassword,
         profile: {
           create: {
-            username,
-            first_name,
-            last_name: last_name || '',
+            username: usernameNorm,
+            first_name: String(first_name).trim(),
+            last_name: last_name ? String(last_name).trim() : '',
           },
         },
       },
@@ -32,9 +45,15 @@ router.post('/register', async (req, res) => {
       },
     });
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET as string, { expiresIn: '7d' });
+    const token = signUserToken(user);
     res.json({ user, token });
   } catch (error: any) {
+    if (error?.message === 'JWT_SECRET_MISSING' || error?.statusCode === 503) {
+      return res.status(503).json({
+        error:
+          'Сервер не настроен: в переменных окружения не задан JWT_SECRET. Добавьте его в Render → Environment.',
+      });
+    }
     const code = error?.code;
     if (code === 'P2002') {
       const target = error?.meta?.target;
@@ -53,22 +72,37 @@ router.post('/register', async (req, res) => {
 
 // Login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Укажите email и пароль' });
+  }
+
+  const emailNorm = String(email).trim().toLowerCase();
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { email },
+    const user = await prisma.user.findFirst({
+      where: {
+        email: { equals: emailNorm, mode: 'insensitive' },
+      },
       include: { profile: true },
     });
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Неверный email или пароль' });
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET as string, { expiresIn: '7d' });
+    const token = signUserToken(user);
     res.json({ user, token });
   } catch (error: any) {
-    res.status(400).json({ error: error.message });
+    if (error?.message === 'JWT_SECRET_MISSING' || error?.statusCode === 503) {
+      return res.status(503).json({
+        error:
+          'Сервер не настроен: в переменных окружения не задан JWT_SECRET. Добавьте его в Render → Environment.',
+      });
+    }
+    console.error('[auth/login]', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
 });
 
