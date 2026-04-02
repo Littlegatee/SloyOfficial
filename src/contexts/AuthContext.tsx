@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import api from "@/lib/api";
 import { socket } from "@/lib/socket";
 
@@ -74,34 +74,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data } = await api.get(`/profiles/${userId}`);
       if (data) setProfile(data as Profile);
     } catch (error) {
       console.error("Error fetching profile:", error);
     }
-  };
+  }, []);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user.id);
-  };
+  }, [user, fetchProfile]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
 
     if (token && storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      fetchProfile(parsedUser.id);
-      socket.connect();
-      socket.emit("join", parsedUser.id);
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        fetchProfile(parsedUser.id);
+        socket.connect();
+        socket.emit("join", parsedUser.id);
+      } catch (e) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      }
     }
     setIsLoading(false);
-  }, []);
+  }, [fetchProfile]);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
@@ -109,9 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(data.user.profile);
     socket.connect();
     socket.emit("join", data.user.id);
-  };
+  }, []);
 
-  const register = async (data: RegisterData) => {
+  const register = useCallback(async (data: RegisterData) => {
     const { data: result } = await api.post("/auth/register", data);
     localStorage.setItem("token", result.token);
     localStorage.setItem("user", JSON.stringify(result.user));
@@ -119,15 +124,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(result.user.profile);
     socket.connect();
     socket.emit("join", result.user.id);
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
     setProfile(null);
     socket.disconnect();
-  };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, profile, isLoading, login, register, logout, refreshProfile }}>

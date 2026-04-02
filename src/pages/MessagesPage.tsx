@@ -178,14 +178,14 @@ export default function MessagesPage() {
     return dialogs.find(d => d.userId === selectedUserId) || null;
   }, [dialogs, selectedUserId]);
 
-  const fetchPinnedMessages = async (userId: string) => {
+  async function fetchPinnedMessages(userId: string) {
     try {
       const { data } = await api.get(`/messages/${userId}/pins`);
       setPinnedMessages(data || []);
     } catch (e) {
       console.error(e);
     }
-  };
+  }
 
   useEffect(() => {
     setCurrentPinnedIndex((prev) => {
@@ -464,7 +464,7 @@ export default function MessagesPage() {
     if (e.target) e.target.value = '';
   };
 
-  const fetchDialogs = async () => {
+  async function fetchDialogs() {
     if (!user) return;
     const initUserId = searchParams.get("userId");
     try {
@@ -568,7 +568,7 @@ export default function MessagesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   fetchDialogsRef.current = fetchDialogs;
 
@@ -654,51 +654,7 @@ export default function MessagesPage() {
     })();
   }, [selectedUserId, searchParams, user, setSearchParams]);
 
-  const loadMessagesPage = async (userId: string, cursor: string | null, mode: 'replace' | 'prepend') => {
-    if (!user) return;
-    if (mode === 'prepend') setLoadingMore(true);
-    try {
-      const { data } = await api.get(`/messages/${userId}`, {
-        params: { take: 50, cursor: cursor || undefined }
-      });
-
-      const pageMessages: ChatMessage[] = data?.messages || [];
-      const pageNextCursor: string | null = data?.nextCursor || null;
-
-      if (mode === 'replace') {
-        setMessages(pageMessages);
-      } else {
-        setMessages(prev => {
-          const existing = new Set(prev.map(m => m.id));
-          const toAdd = pageMessages.filter(m => !existing.has(m.id));
-          return [...toAdd, ...prev];
-        });
-      }
-      setNextCursor(pageNextCursor);
-    } catch (error) {
-      console.error("Error loading messages:", error);
-    } finally {
-      if (mode === 'prepend') setLoadingMore(false);
-    }
-  };
-
-  const jumpToDate = async (dateYYYYMMDD: string) => {
-    if (!selectedUserId) return;
-    try {
-      const { data } = await api.get(`/messages/${selectedUserId}/by-date`, {
-        params: { date: dateYYYYMMDD, take: 120 }
-      });
-      const pageMessages: ChatMessage[] = data?.messages || [];
-      const pageNextCursor: string | null = data?.nextCursor || null;
-      setMessages(pageMessages);
-      setNextCursor(pageNextCursor);
-      setTimeout(() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "auto" }), 80);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "Не удалось перейти к дате");
-    }
-  };
-
-  const openChat = async (userId: string, name: string, avatar?: string | null) => {
+  async function openChat(userId: string, name: string, avatar?: string | null) {
     // Clear current messages immediately to avoid showing old chat content
     setMessages([]);
     setMessageText("");
@@ -739,7 +695,51 @@ export default function MessagesPage() {
     } catch (error) {
       console.error("Error opening chat:", error);
     }
-  };
+  }
+
+  async function loadMessagesPage(userId: string, cursor: string | null, mode: 'replace' | 'prepend') {
+     if (!user) return;
+     if (mode === 'prepend') setLoadingMore(true);
+     try {
+       const { data } = await api.get(`/messages/${userId}`, {
+         params: { take: 50, cursor: cursor || undefined }
+       });
+ 
+       const pageMessages: ChatMessage[] = data?.messages || [];
+       const pageNextCursor: string | null = data?.nextCursor || null;
+ 
+       if (mode === 'replace') {
+         setMessages(pageMessages);
+       } else {
+         setMessages(prev => {
+           const existing = new Set(prev.map(m => m.id));
+           const toAdd = pageMessages.filter(m => !existing.has(m.id));
+           return [...toAdd, ...prev];
+         });
+       }
+       setNextCursor(pageNextCursor);
+     } catch (error) {
+       console.error("Error loading messages:", error);
+     } finally {
+       if (mode === 'prepend') setLoadingMore(false);
+     }
+   }
+
+   async function jumpToDate(dateYYYYMMDD: string) {
+     if (!selectedUserId) return;
+     try {
+       const { data } = await api.get(`/messages/${selectedUserId}/by-date`, {
+         params: { date: dateYYYYMMDD, take: 120 }
+       });
+       const pageMessages: ChatMessage[] = data?.messages || [];
+       const pageNextCursor: string | null = data?.nextCursor || null;
+       setMessages(pageMessages);
+       setNextCursor(pageNextCursor);
+       setTimeout(() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "auto" }), 80);
+     } catch (err: any) {
+       toast.error(err?.response?.data?.error || "Не удалось перейти к дате");
+     }
+   }
 
   const handleTypingChanged = (text: string) => {
     setMessageText(text);

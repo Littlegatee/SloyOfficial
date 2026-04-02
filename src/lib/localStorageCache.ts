@@ -2,11 +2,13 @@
 
 const CACHE_KEY_PREFIXES = ["feed_cache:", "dialogs_cache:"] as const;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_MAX_TOTAL_BYTES = 1_800_000;
+const DEFAULT_MAX_TOTAL_BYTES = 1_500_000; // Slightly lower default
 
 /** Strip heavy fields from feed posts so cache fits in ~5MB localStorage budget. */
 export function stripFeedPostsForCache(posts: unknown[]): unknown[] {
-  return posts.map((raw) => {
+  if (!Array.isArray(posts)) return [];
+  // Take only top 30 posts to save space
+  return posts.slice(0, 30).map((raw) => {
     const p = raw as Record<string, unknown>;
     const u = p.user as Record<string, unknown> | undefined;
     const prof = u?.profile as Record<string, unknown> | undefined;
@@ -53,7 +55,16 @@ function keyIsManaged(key: string) {
 }
 
 function entrySize(key: string, raw: string) {
-  return key.length * 2 + raw.length * 2;
+  return (key.length + raw.length) * 2;
+}
+
+export function clearAllManagedCaches() {
+  const keys = Object.keys(localStorage);
+  for (const key of keys) {
+    if (keyIsManaged(key)) {
+      localStorage.removeItem(key);
+    }
+  }
 }
 
 export function pruneExpiredLocalCaches(maxAgeMs = DEFAULT_TTL_MS) {
@@ -105,6 +116,11 @@ export function enforceLocalStorageBudget(maxTotalBytes = DEFAULT_MAX_TOTAL_BYTE
 }
 
 export function runLocalStorageCacheMaintenance() {
-  pruneExpiredLocalCaches();
-  enforceLocalStorageBudget();
+  try {
+    pruneExpiredLocalCaches();
+    enforceLocalStorageBudget();
+  } catch (e) {
+    console.error("Cache maintenance failed, clearing all:", e);
+    clearAllManagedCaches();
+  }
 }

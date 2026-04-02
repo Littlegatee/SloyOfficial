@@ -44,52 +44,117 @@
     --glass-highlight: 0 0% 100% / 0.8;
 
     /* Sloy brand */
-    --sloy-gradient: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85), hsl(var(--primary) / 0.7));
-    --sloy-gradient-subtle: linear-gradient(135deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.05));
+    --sloy-gradient: linear-gradient(135deg, #0095FF 0%, #0072FF 100%);
+    --sloy-gradient-subtle: linear-gradient(135deg, rgba(0, 149, 255, 0.1) 0%, rgba(0, 114, 255, 0.05) 100%);
     --sloy-online: 152 69% 47%;
     --sloy-surface: 220 20% 97%;
+    --sloy-accent: 204 100% 50%;
   }
 
   .dark {
-    --background: 224 20% 6%;
+    --background: 224 20% 4%;
     --foreground: 220 13% 91%;
-    --card: 224 20% 10%;
+    --card: 224 20% 8%;
     --card-foreground: 220 13% 91%;
-    --popover: 224 20% 10%;
+    --popover: 224 20% 8%;
     --popover-foreground: 220 13% 91%;
     --primary: 204 88% 53%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 224 20% 14%;
+    --secondary: 224 20% 12%;
     --secondary-foreground: 220 13% 91%;
-    --muted: 224 20% 14%;
+    --muted: 224 20% 12%;
     --muted-foreground: 220 9% 55%;
     --accent: hsl(var(--primary) / 0.15);
     --accent-foreground: hsl(var(--primary));
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 224 20% 16%;
-    --input: 224 20% 16%;
+    --border: 224 20% 14%;
+    --input: 224 20% 14%;
     --ring: hsl(var(--primary));
 
-    --sidebar-background: 224 20% 8%;
+    --sidebar-background: 224 20% 6%;
     --sidebar-foreground: 220 9% 55%;
     --sidebar-primary: hsl(var(--primary));
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: hsl(var(--primary) / 0.15);
     --sidebar-accent-foreground: hsl(var(--primary));
-    --sidebar-border: 224 20% 16%;
+    --sidebar-border: 224 20% 14%;
     --sidebar-ring: 204 88% 53%;
 
-    --glass-bg: 224 20% 10% / 0.65;
-    --glass-border: 224 20% 20% / 0.4;
+    --glass-bg: 224 20% 8% / 0.65;
+    --glass-border: 224 20% 18% / 0.4;
     --glass-blur: 24px;
     --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     --glass-highlight: 0 0% 100% / 0.06;
 
-    --sloy-gradient: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85), hsl(var(--primary) / 0.7));
-    --sloy-gradient-subtle: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.1));
+    --sloy-gradient: linear-gradient(135deg, #0095FF 0%, #0072FF 100%);
+    --sloy-gradient-subtle: linear-gradient(135deg, rgba(0, 149, 255, 0.15) 0%, rgba(0, 114, 255, 0.1) 100%);
     --sloy-online: 152 69% 47%;
-    --sloy-surface: 224 20% 12%;
+    --sloy-surface: 224 20% 10%;
+    --sloy-accent: 204 100% 50%;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-[hsl(var(--glass-bg))] border border-[hsl(var(--glass-border))] backdrop-blur-[var(--glass-blur)] shadow-[var(--glass-shadow)];
+  }
+
+  .glass-strong {
+    @apply bg-[hsl(var(--glass-bg))] border border-[hsl(var(--glass-border))] backdrop-blur-[40px] shadow-[var(--glass-shadow)];
+  }
+
+  .btn-gradient {
+    background: var(--sloy-gradient);
+    @apply text-white shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200;
+  }
+
+  .text-gradient {
+    background: var(--sloy-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .logo-animated {
+    background: linear-gradient(
+      to right,
+      hsl(var(--primary)) 0%,
+      #00d4ff 50%,
+      hsl(var(--primary)) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shine 3s linear infinite;
+  }
+
+  @keyframes shine {
+    to {
+      background-position: 200% center;
+    }
+  }
+
+  .feed-card-entrance {
+    animation: slideUpFade 0.4s ease-out forwards;
+  }
+
+  @keyframes slideUpFade {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 

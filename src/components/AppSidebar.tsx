@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -23,6 +23,7 @@ export default function AppSidebar() {
   const badgeFetchAt = useRef(0);
   const { t } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
 
   const toggleTheme = () => {
@@ -154,44 +155,46 @@ export default function AppSidebar() {
         </div>
       </aside>
 
+      {/* Mobile Bottom Navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-50 glass-strong border-t border-border/40 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-7 gap-0.5 px-1 py-2">
+        <div className="flex items-center justify-around px-2 py-2">
           {navItems.map(({ to, icon: Icon, labelKey }) => {
             const isActive = location.pathname === to;
             const showMsgDot = to === "/messages" && messagesFallbackBadge;
+            
+            // Only show main 5 items on mobile bottom nav for better spacing
+            if (["/music", "/settings"].includes(to)) return null;
+
             return (
               <NavLink
                 key={to}
                 to={to}
-                className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[8px] transition-colors ${
-                  isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
+                className={`relative flex flex-col items-center justify-center gap-1.5 p-2 rounded-2xl transition-all duration-300 ${
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <span className="relative inline-flex">
-                  <Icon className="w-3.5 h-3.5" />
+                <div className={`p-2 rounded-2xl transition-all duration-300 ${isActive ? 'bg-primary/10 scale-110 shadow-inner' : ''}`}>
+                  <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
                   {showMsgDot && (
-                    <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-destructive" />
+                    <span className="absolute right-3 top-3 h-2 w-2 rounded-full bg-destructive border-2 border-background shadow-sm" />
                   )}
+                </div>
+                <span className={`text-[10px] font-bold tracking-tight transition-all ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}>
+                  {t(labelKey)}
                 </span>
-                <span className="leading-tight text-center line-clamp-2">{t(labelKey)}</span>
               </NavLink>
             );
           })}
-        </div>
-        <div className="flex items-center justify-between px-3 pb-1">
-          <button
-            onClick={toggleTheme}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          
+          {/* More button for mobile */}
+          <button 
+            onClick={() => navigate("/settings")}
+            className="flex flex-col items-center justify-center gap-1.5 p-2 text-muted-foreground hover:text-foreground"
           >
-            {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            {isDark ? "Светлая" : "Темная"}
-          </button>
-          <button
-            onClick={logout}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] text-muted-foreground hover:text-destructive"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Выйти
+            <div className="p-2">
+              <Settings className="w-6 h-6" />
+            </div>
+            <span className="text-[10px] font-bold opacity-0">...</span>
           </button>
         </div>
       </nav>
