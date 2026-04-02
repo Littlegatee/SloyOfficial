@@ -675,7 +675,7 @@ export default function SettingsPage() {
                 <div className="mt-6 p-4 rounded-2xl bg-background/50 border border-border/50">
                   <h4 className="font-medium text-sm mb-1">Push-уведомления для iPhone/Android</h4>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Для iOS: откройте сайт в Safari -> "Поделиться" -> "На экран Домой", затем включите push ниже.
+                  Для iOS: откройте сайт в Safari, нажмите "Поделиться", затем "На экран Домой", после этого включите push ниже.
                   </p>
                   <p className="text-xs text-muted-foreground mb-3">
                     Статус: {isStandalone ? "режим веб-приложения активен" : "открыто в браузере"} ·
