@@ -1,5 +1,5 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import prisma, { withDbReconnectRetry } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { io } from '../socket.js';
 
@@ -176,27 +176,27 @@ router.post('/', authenticateToken, async (req: any, res) => {
 
     // If posting as community, verify permissions
     if (normalizedAuthorType === 'COMMUNITY' && community_id) {
-      const member = await prisma.communityMember.findUnique({
+      const member = await withDbReconnectRetry(() => prisma.communityMember.findUnique({
         where: {
           community_id_user_id: {
             community_id,
             user_id: userId
           }
         }
-      });
+      }));
 
       if (!member) {
         return res.status(403).json({ error: "Вы не состоите в этом сообществе" });
       }
 
-      const community = await prisma.community.findUnique({ where: { id: community_id } });
+      const community = await withDbReconnectRetry(() => prisma.community.findUnique({ where: { id: community_id } }));
       const canWriteChannel = ['OWNER', 'ADMIN', 'MODERATOR'].includes(member.role as string);
       if (community?.type === 'CHANNEL' && !canWriteChannel) {
         return res.status(403).json({ error: "Писать в канал могут только модераторы и администраторы" });
       }
     }
 
-    const post = await prisma.post.create({
+    const post = await withDbReconnectRetry(() => prisma.post.create({
       data: {
         user_id: userId,
         content_text,
@@ -210,7 +210,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
         community: true,
         likes: true
       }
-    });
+    }));
 
     const sanitized = sanitizePostsForClient([post], userId)[0];
     io.emit('new_post', sanitized);

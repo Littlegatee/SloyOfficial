@@ -28,6 +28,7 @@ export interface Profile {
   telegram_id: string | null;
   is_verified: boolean;
   created_at: string;
+  is_limited?: boolean;
   profile_visibility?: "PUBLIC" | "FRIENDS_ONLY" | "PRIVATE";
   allow_friend_requests?: boolean;
 

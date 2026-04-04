@@ -107,6 +107,12 @@ model User {
   dialogMutes      DialogMute[]
   dialogArchives   DialogArchive[]
   pushSubscriptions PushSubscription[]
+  
+  // New features
+  chatFolders     ChatFolder[]
+  chatDrafts      ChatDraft[]
+  pollVotes       PollVote[]
+  chatConfigs     UserChatConfig[]
 
   @@index([email])
 }
@@ -258,6 +264,7 @@ enum MessageType {
   MEDIA
   FILE
   VIDEO_CIRCLE
+  POLL
 }
 
 model Message {
@@ -275,6 +282,12 @@ model Message {
   content_text String?  @db.Text
   media_url    String?
   voice_duration Int?
+  
+  // Album/Gallery grouping
+  album_id     String?
+  
+  // Link Previews
+  link_preview Json?
 
   is_read      Boolean  @default(false)
   is_edited    Boolean  @default(false)
@@ -292,6 +305,93 @@ model Message {
   @@index([reply_to_id])
   @@index([created_at])
   @@index([forwarded_from_id])
+  @@index([album_id])
+}
+
+model ChatFolder {
+  id          String   @id @default(uuid())
+  user_id     String
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name        String
+  icon        String?
+  filters     Json     // { types: ["PRIVATE", "GROUPS", "UNREAD"], includeIds: [], excludeIds: [] }
+  position    Int      @default(0)
+  created_at  DateTime @default(now())
+
+  @@index([user_id])
+}
+
+model ChatDraft {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  recipient_id  String
+  content_text  String?  @db.Text
+  reply_to_id   String?
+  updated_at    DateTime @updatedAt
+
+  @@unique([user_id, recipient_id])
+  @@index([user_id])
+}
+
+model Poll {
+  id            String   @id @default(uuid())
+  message_id    String   @unique
+  question      String
+  options       Json     // [{ id: 1, text: "Yes" }, { id: 2, text: "No" }]
+  multiple      Boolean  @default(false)
+  anonymous     Boolean  @default(false)
+  closed        Boolean  @default(false)
+  created_at    DateTime @default(now())
+  
+  votes         PollVote[]
+}
+
+model PollVote {
+  id         String   @id @default(uuid())
+  poll_id    String
+  poll       Poll     @relation(fields: [poll_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  option_id  Int
+  created_at DateTime @default(now())
+
+  @@unique([poll_id, user_id, option_id])
+  @@index([poll_id])
+  @@index([user_id])
+}
+
+model StickerPack {
+  id          String    @id @default(uuid())
+  name        String
+  title       String
+  thumbnail   String?
+  created_at  DateTime  @default(now())
+  stickers    Sticker[]
+}
+
+model Sticker {
+  id          String      @id @default(uuid())
+  pack_id     String
+  pack        StickerPack @relation(fields: [pack_id], references: [id], onDelete: Cascade)
+  media_url   String
+  emoji       String?
+  position    Int         @default(0)
+
+  @@index([pack_id])
+}
+
+model UserChatConfig {
+  id            String   @id @default(uuid())
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  other_user_id String
+  bubble_color  String?  // hex color
+  text_color    String?  // hex color
+  notif_sound   String?  // sound identifier
+
+  @@unique([user_id, other_user_id])
+  @@index([user_id])
 }
 
 model MessageReaction {

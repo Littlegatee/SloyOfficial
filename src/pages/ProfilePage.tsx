@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { MapPin, Calendar, Edit2, Loader2, X, Save, UserPlus, UserCheck, Clock, MessageCircle, Maximize2, Music as MusicIcon, Play } from "lucide-react";
+import { MapPin, Calendar, Edit2, Loader2, X, Save, UserPlus, UserCheck, Clock, MessageCircle, Maximize2, Music as MusicIcon, Play, Heart, Share2, MoreVertical } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, Profile } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useParams, useNavigate } from "react-router-dom";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { useI18n } from "@/i18n/I18nContext";
 import BlurImage from "@/components/BlurImage";
+import { socket } from "@/lib/socket";
 
 export default function ProfilePage() {
   const { userId: paramUserId } = useParams();
@@ -19,10 +20,72 @@ export default function ProfilePage() {
   const isOwnProfile = !paramUserId || paramUserId === currentUser?.id;
   const effectiveUserId = isOwnProfile ? currentUser?.id : paramUserId;
 
-  const [targetProfile, setTargetProfile] = useState<any>(null);
+  const [targetProfile, setTargetProfile] = useState<Profile | null>(null);
   const [activeTab, setActiveTab] = useState<"posts" | "photos">("posts");
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Real-time socket events
+  useEffect(() => {
+    if (!effectiveUserId) return;
+
+    const handlePostLiked = ({ postId, likesCount, likedByMe, userId }: any) => {
+      setPosts(prev => prev.map(p => 
+        p.id === postId ? { ...p, likes_count: likesCount, liked_by_me: userId === currentUser?.id ? likedByMe : p.liked_by_me } : p
+      ));
+    };
+
+    const handleNewComment = ({ postId, commentsCount }: any) => {
+      setPosts(prev => prev.map(p => 
+        p.id === postId ? { ...p, comments_count: commentsCount } : p
+      ));
+    };
+
+    const handleNewPost = (post: any) => {
+      if (post.user_id === effectiveUserId) {
+        setPosts(prev => [post, ...prev]);
+      }
+    };
+
+    socket.on("post_liked", handlePostLiked);
+    socket.on("new_comment", handleNewComment);
+    socket.on("new_post", handleNewPost);
+
+    return () => {
+      socket.off("post_liked", handlePostLiked);
+      socket.off("new_comment", handleNewComment);
+      socket.off("new_post", handleNewPost);
+    };
+  }, [effectiveUserId, currentUser?.id]);
+
+  const toggleLike = async (postId: string, currentlyLiked: boolean) => {
+    try {
+      // Optimistic update
+      setPosts(prev => prev.map(p => 
+        p.id === postId ? { 
+          ...p, 
+          liked_by_me: !currentlyLiked, 
+          likes_count: p.likes_count + (currentlyLiked ? -1 : 1) 
+        } : p
+      ));
+
+      if (currentlyLiked) {
+        await api.delete(`/posts/${postId}/like`);
+      } else {
+        await api.post(`/posts/${postId}/like`);
+      }
+    } catch (error) {
+      // Revert on error
+      setPosts(prev => prev.map(p => 
+        p.id === postId ? { 
+          ...p, 
+          liked_by_me: currentlyLiked, 
+          likes_count: p.likes_count 
+        } : p
+      ));
+      toast.error("Не удалось изменить лайк");
+    }
+  };
   const [friendshipStatus, setFriendshipStatus] = useState<string | null>(null);
   const [viewAsGuest, setViewAsGuest] = useState(false);
 
@@ -31,8 +94,18 @@ export default function ProfilePage() {
     setViewAsGuest(false);
   }, [effectiveUserId]);
 
+  const isFriend = friendshipStatus === 'ACCEPTED';
   const hidePrivateFields =
-    Boolean(targetProfile?.is_limited) || (isOwnProfile && viewAsGuest);
+    isOwnProfile 
+      ? viewAsGuest // If own profile, only hide if guest view is on
+      : (
+          targetProfile?.is_limited || 
+          (targetProfile?.profile_visibility === 'PRIVATE' && !isFriend) ||
+          (targetProfile?.profile_visibility === 'FRIENDS_ONLY' && !isFriend)
+        );
+
+  // Content visibility (posts, photos)
+  const canSeeContent = isOwnProfile || isFriend || targetProfile?.profile_visibility === 'PUBLIC';
 
   // Edit Profile State
   const [isEditing, setIsEditing] = useState(false);
@@ -68,18 +141,18 @@ export default function ProfilePage() {
         last_name: myProfile.last_name || "",
         status: myProfile.status || "",
         city: myProfile.city || "",
-        country: (myProfile as any).country || "",
-        language: (myProfile as any).language || "",
-        interests: (myProfile as any).interests || "",
-        gender: (myProfile as any).gender || "",
-        favorite_movies: (myProfile as any).favorite_movies || "",
-        favorite_games: (myProfile as any).favorite_games || "",
+        country: myProfile.country || "",
+        language: myProfile.language || "",
+        interests: myProfile.interests || "",
+        gender: myProfile.gender || "",
+        favorite_movies: myProfile.favorite_movies || "",
+        favorite_games: myProfile.favorite_games || "",
       });
       setLoading(false);
 
       // Auth/profile boot response might not include `pinned_track` relation.
       // If user has a pinned track, fetch again to render it.
-      if ((myProfile as any)?.pinned_track_id && !(myProfile as any)?.pinned_track) {
+      if (myProfile.pinned_track_id && !myProfile.pinned_track) {
         api.get(`/profiles/${effectiveUserId}`)
           .then(({ data }) => setTargetProfile(data))
           .catch(() => undefined);
@@ -354,32 +427,32 @@ export default function ProfilePage() {
                   {targetProfile.city}
                 </span>
               )}
-              {(targetProfile as any)?.country && (
+              {targetProfile?.country && (
                 <span className="flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5" />
-                  {(targetProfile as any).country}
+                  {targetProfile.country}
                 </span>
               )}
-              {(targetProfile as any)?.language && (
-                <span>Язык: {(targetProfile as any).language}</span>
+              {targetProfile?.language && (
+                <span>{t("profile.language")}: {targetProfile.language}</span>
               )}
-              {(targetProfile as any)?.gender && (
-                <span>Пол: {(targetProfile as any).gender}</span>
+              {targetProfile?.gender && (
+                <span>{t("profile.gender")}: {targetProfile.gender}</span>
               )}
             </div>
 
-            {(targetProfile as any)?.interests && (
+            {targetProfile?.interests && (
               <p className="text-xs text-muted-foreground mt-2">
-                Интересы: {(targetProfile as any).interests}
+                {t("profile.interests")}: {targetProfile.interests}
               </p>
             )}
-            {((targetProfile as any)?.favorite_movies || (targetProfile as any)?.favorite_games) && (
+            {(targetProfile?.favorite_movies || targetProfile?.favorite_games) && (
               <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                {(targetProfile as any)?.favorite_movies && (
-                  <p>Фильмы: {(targetProfile as any).favorite_movies}</p>
+                {targetProfile?.favorite_movies && (
+                  <p>{t("profile.movies")}: {targetProfile.favorite_movies}</p>
                 )}
-                {(targetProfile as any)?.favorite_games && (
-                  <p>Игры: {(targetProfile as any).favorite_games}</p>
+                {targetProfile?.favorite_games && (
+                  <p>{t("profile.games")}: {targetProfile.favorite_games}</p>
                 )}
               </div>
             )}
@@ -438,11 +511,11 @@ export default function ProfilePage() {
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-lg font-bold mb-4">Редактировать профиль</h3>
+            <h3 className="text-lg font-bold mb-4">{t("profile.edit")}</h3>
 
             <div className="space-y-4 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">Обложка</p>
+                <p className="text-xs font-medium text-muted-foreground mb-2">{t("music.cover")}</p>
                 <div
                   className="h-28 rounded-2xl overflow-hidden glass-subtle relative cursor-pointer"
                   onClick={() => coverInputRef.current?.click()}
@@ -472,7 +545,7 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Имя</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.firstName")}</label>
                   <input
                     type="text"
                     value={editForm.first_name}
@@ -481,7 +554,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Фамилия</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.lastName")}</label>
                   <input
                     type="text"
                     value={editForm.last_name}
@@ -492,7 +565,7 @@ export default function ProfilePage() {
               </div>
               
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Статус (о себе)</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.status")}</label>
                 <textarea
                   value={editForm.status}
                   onChange={(e) => setEditForm({...editForm, status: e.target.value})}
@@ -502,50 +575,106 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Город</label>
-                  <input
-                    type="text"
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.city")}</label>
+                  <select
                     value={editForm.city}
                     onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
-                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                  />
+                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                  >
+                    <option value="">{t("profile.notSpecified")}</option>
+                    <option value="Москва">Москва</option>
+                    <option value="Санкт-Петербург">Санкт-Петербург</option>
+                    <option value="Новосибирск">Новосибирск</option>
+                    <option value="Екатеринбург">Екатеринбург</option>
+                    <option value="Казань">Казань</option>
+                    <option value="Нижний Новгород">Нижний Новгород</option>
+                    <option value="Челябинск">Челябинск</option>
+                    <option value="Самара">Самара</option>
+                    <option value="Омск">Омск</option>
+                    <option value="Ростов-на-Дону">Ростов-на-Дону</option>
+                    <option value="Уфа">Уфа</option>
+                    <option value="Красноярск">Красноярск</option>
+                    <option value="Воронеж">Воронеж</option>
+                    <option value="Пермь">Пермь</option>
+                    <option value="Волгоград">Волгоград</option>
+                    <option value="Краснодар">Краснодар</option>
+                    <option value="Саратов">Саратов</option>
+                    <option value="Тюмень">Тюмень</option>
+                    <option value="Тольятти">Тольятти</option>
+                    <option value="Ижевск">Ижевск</option>
+                    <option value="Барнаул">Барнаул</option>
+                    <option value="Ульяновск">Ульяновск</option>
+                    <option value="Иркутск">Иркутск</option>
+                    <option value="Хабаровск">Хабаровск</option>
+                    <option value="Махачкала">Махачкала</option>
+                    <option value="Владивосток">Владивосток</option>
+                    <option value="Грозный">Грозный</option>
+                    <option value="Другой">Другой</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Страна</label>
-                  <input
-                    type="text"
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.country")}</label>
+                  <select
                     value={editForm.country}
                     onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
-                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                  />
+                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                  >
+                    <option value="">{t("profile.notSpecified")}</option>
+                    <option value="Россия">Россия</option>
+                    <option value="Беларусь">Беларусь</option>
+                    <option value="Казахстан">Казахстан</option>
+                    <option value="Армения">Армения</option>
+                    <option value="Грузия">Грузия</option>
+                    <option value="Узбекистан">Узбекистан</option>
+                    <option value="Азербайджан">Азербайджан</option>
+                    <option value="Кыргызстан">Кыргызстан</option>
+                    <option value="Таджикистан">Таджикистан</option>
+                    <option value="Турция">Турция</option>
+                    <option value="Германия">Германия</option>
+                    <option value="США">США</option>
+                    <option value="ОАЭ">ОАЭ</option>
+                    <option value="Другая">Другая</option>
+                  </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Язык</label>
-                  <input
-                    type="text"
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.language")}</label>
+                  <select
                     value={editForm.language}
                     onChange={(e) => setEditForm({ ...editForm, language: e.target.value })}
-                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                    placeholder="Напр. Русский"
-                  />
+                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                  >
+                    <option value="">{t("profile.notSpecified")}</option>
+                    <option value="Русский">Русский</option>
+                    <option value="English">English</option>
+                    <option value="Татарча">Татарча</option>
+                    <option value="Нохчийн">Нохчийн</option>
+                    <option value="Հայերեն">Հայերեն</option>
+                    <option value="Türkçe">Türkçe</option>
+                    <option value="Deutsch">Deutsch</option>
+                    <option value="Français">Français</option>
+                    <option value="Español">Español</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Пол</label>
-                  <input
-                    type="text"
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.gender")}</label>
+                  <select
                     value={editForm.gender}
                     onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
-                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                    placeholder="По желанию"
-                  />
+                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                  >
+                    <option value="">{t("profile.notSpecified")}</option>
+                    <option value="Мужской">Мужской</option>
+                    <option value="Женский">Женский</option>
+                    <option value="Другой">Другой</option>
+                  </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Интересы</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.interests")}</label>
                 <textarea
                   value={editForm.interests}
                   onChange={(e) => setEditForm({ ...editForm, interests: e.target.value })}
@@ -555,7 +684,7 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Любимые фильмы</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.movies")}</label>
                 <textarea
                   value={editForm.favorite_movies}
                   onChange={(e) => setEditForm({ ...editForm, favorite_movies: e.target.value })}
@@ -564,7 +693,7 @@ export default function ProfilePage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Любимые игры</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.games")}</label>
                 <textarea
                   value={editForm.favorite_games}
                   onChange={(e) => setEditForm({ ...editForm, favorite_games: e.target.value })}
@@ -578,7 +707,7 @@ export default function ProfilePage() {
                 className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-2xl btn-gradient text-sm font-medium mt-2"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Сохранить
+                {t("profile.save")}
               </button>
             </div>
           </div>
@@ -586,20 +715,23 @@ export default function ProfilePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-medium transition-all ${
-              activeTab === tab.id
-                ? "btn-gradient"
-                : "glass text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab.label} {tab.count > 0 && `(${tab.count})`}
-          </button>
-        ))}
+      <div className="flex items-center gap-1.5 p-1 glass rounded-2xl border border-border/40 w-fit mb-6">
+        <button
+          onClick={() => setActiveTab("posts")}
+          className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "posts" ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          Посты ({posts.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("photos")}
+          className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "photos" ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+          }`}
+        >
+          Фото
+        </button>
       </div>
 
       {/* Content */}
@@ -607,28 +739,121 @@ export default function ProfilePage() {
         <div className="flex justify-center py-12">
           <Loader2 className="w-5 h-5 animate-spin text-primary" />
         </div>
-      ) : targetProfile?.is_limited ? (
-        <div className="text-center py-16 text-muted-foreground text-sm glass rounded-3xl px-4">
+      ) : !canSeeContent ? (
+        <div className="text-center py-16 text-muted-foreground text-sm glass rounded-3xl px-4 border border-border/40 shadow-xl">
+          <Clock className="w-10 h-10 mx-auto mb-4 opacity-20" />
           {t("profile.limited.message")}
         </div>
       ) : (
-        <div className="text-center py-16 text-muted-foreground text-sm glass rounded-3xl">
-          {activeTab === "posts" && posts.length === 0 && (isOwnProfile ? "У вас пока нет постов. Создайте первый в ленте!" : "У пользователя пока нет постов.")}
+        <div className="pb-20">
+          {activeTab === "posts" && posts.length === 0 && (
+            <div className="text-center py-16 text-muted-foreground text-sm glass rounded-3xl border border-border/40">
+              {isOwnProfile ? "У вас пока нет постов. Создайте первый в ленте!" : "У пользователя пока нет постов."}
+            </div>
+          )}
+          
           {activeTab === "posts" && posts.length > 0 && (
-            <div className="space-y-3 text-left p-4">
+            <div className="space-y-4">
               {posts.map(post => (
-                <div key={post.id} className="glass rounded-2xl p-4">
-                  <p className="text-sm">{post.content_text}</p>
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    ❤️ {post.likes_count || 0} · 💬 {post.comments_count || 0}
-                  </p>
+                <div 
+                  key={post.id} 
+                  className="glass rounded-3xl overflow-hidden border border-border/40 shadow-xl shadow-black/5 hover:shadow-black/10 transition-all cursor-pointer group/post"
+                  onClick={() => navigate(`/post/${post.id}`)}
+                >
+                  {/* Post Header */}
+                  <div className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-subtle flex items-center justify-center overflow-hidden border border-white/10">
+                        {targetProfile?.avatar_url ? (
+                          <img src={targetProfile.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <span className="text-sm font-bold text-gradient">{targetProfile?.first_name?.charAt(0)}</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm">{targetProfile?.first_name}</p>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                          {new Date(post.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <button className="p-2 rounded-xl hover:bg-accent text-muted-foreground opacity-0 group-hover/post:opacity-100 transition-all">
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Post Content */}
+                  <div className="px-4 pb-3">
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-4">{post.content_text}</p>
+                  </div>
+
+                  {/* Post Media */}
+                  {post.media_url && (
+                    <div className="px-2 pb-2">
+                      <div className="relative rounded-2xl overflow-hidden bg-accent/50 aspect-video group/media">
+                        <BlurImage
+                          src={post.media_url}
+                          className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-105"
+                          alt=""
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
+                          <Maximize2 className="w-8 h-8 text-white scale-90 group-hover/media:scale-100 transition-transform" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Post Actions */}
+                  <div className="p-3 flex items-center justify-between border-t border-border/5">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLike(post.id, post.liked_by_me);
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all font-bold text-xs ${
+                          post.liked_by_me ? 'bg-red-500/10 text-red-500' : 'hover:bg-accent text-muted-foreground'
+                        }`}
+                      >
+                        <Heart className={`w-4 h-4 transition-transform ${post.liked_by_me ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
+                        <span>{post.likes_count > 0 && post.likes_count}</span>
+                      </button>
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/post/${post.id}`);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-accent text-muted-foreground transition-all font-bold text-xs group/btn"
+                      >
+                        <MessageCircle className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+                        <span>{post.comments_count > 0 && post.comments_count}</span>
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // share logic
+                      }}
+                      className="p-2.5 rounded-xl hover:bg-accent text-muted-foreground transition-all"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-          {activeTab === "photos" && posts.filter((p: any) => p.media_url).length === 0 && "Фотографий в постах пока нет."}
+
+          {activeTab === "photos" && posts.filter((p: any) => p.media_url).length === 0 && (
+            <div className="text-center py-16 text-muted-foreground text-sm glass rounded-3xl border border-border/40">
+              Фотографий в постах пока нет.
+            </div>
+          )}
+          
           {activeTab === "photos" && posts.filter((p: any) => p.media_url).length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {posts
                 .filter((p: any) => p.media_url)
                 .map((p: any) => (
@@ -636,13 +861,12 @@ export default function ProfilePage() {
                     key={p.id}
                     type="button"
                     onClick={() => setLightboxUrl(p.media_url)}
-                    className="aspect-square rounded-2xl overflow-hidden bg-black/10"
+                    className="aspect-square rounded-3xl overflow-hidden glass border border-border/40 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all group/photo"
                   >
                     <BlurImage
                       src={p.media_url}
                       alt=""
-                      className="w-full h-full"
-                      objectFit="cover"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover/photo:scale-110"
                     />
                   </button>
                 ))}

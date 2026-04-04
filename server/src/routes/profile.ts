@@ -92,21 +92,41 @@ router.get('/blocks/me', authenticateToken, async (req: any, res) => {
 // Get user profile
 router.get('/:id', authenticateToken, async (req: any, res) => {
   try {
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: req.params.id as string },
+    const idParam = req.params.id as string;
+    
+    // First try finding by user_id (UUID)
+    let profile = await prisma.profile.findUnique({
+      where: { user_id: idParam },
       include: {
         user: true,
         pinned_track: true,
       },
     });
+
+    // If not found, try finding by username
+    if (!profile) {
+      profile = await prisma.profile.findUnique({
+        where: { username: idParam },
+        include: {
+          user: true,
+          pinned_track: true,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({ error: "Профиль не найден" });
+    }
+
+    const targetId = profile.user_id;
     // Apply privacy for last seen / online flags (simple: hide values, not the profile itself)
     const me = req.user.id as string;
-    const target = req.params.id as string;
+    
     const blocked = await prisma.userBlock.findFirst({
       where: {
         OR: [
-          { blocker_id: me, blocked_id: target },
-          { blocker_id: target, blocked_id: me },
+          { blocker_id: me, blocked_id: targetId },
+          { blocker_id: targetId, blocked_id: me },
         ],
       },
     });
@@ -121,8 +141,8 @@ router.get('/:id', authenticateToken, async (req: any, res) => {
       });
     }
 
-    if (me !== target && profile) {
-      const friends = await areAcceptedFriends(me, target);
+    if (me !== targetId && profile) {
+      const friends = await areAcceptedFriends(me, targetId);
       if (
         (profile.profile_visibility === 'FRIENDS_ONLY' ||
           profile.profile_visibility === 'PRIVATE') &&

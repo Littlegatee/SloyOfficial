@@ -1,23 +1,37 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music } from "lucide-react";
+import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music, Menu as MenuIcon, ChevronLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { hasActivePushSubscription } from "@/lib/pushNotifications";
 import { useI18n } from "@/i18n/I18nContext";
 import { useState, useEffect, useRef } from "react";
 import UserSearch from "./UserSearch";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const navItems = [
   { to: "/feed", icon: Home, labelKey: "nav.feed" as const },
+  { to: "/music", icon: Music, labelKey: "nav.music" as const },
+  { to: "/messages", icon: MessageCircle, labelKey: "nav.messages" as const },
   { to: "/profile", icon: User, labelKey: "nav.profile" as const },
   { to: "/friends", icon: Users, labelKey: "nav.friends" as const },
   { to: "/communities", icon: Layers, labelKey: "nav.communities" as const },
-  { to: "/messages", icon: MessageCircle, labelKey: "nav.messages" as const },
-  { to: "/music", icon: Music, labelKey: "nav.music" as const },
   { to: "/settings", icon: Settings, labelKey: "nav.settings" as const },
 ];
 
-export default function AppSidebar() {
+const bottomNavItems = [
+  { to: "/feed", icon: Home, labelKey: "nav.feed" as const },
+  { to: "/music", icon: Music, labelKey: "nav.music" as const },
+  { to: "/messages", icon: MessageCircle, labelKey: "nav.messages" as const },
+  { to: "/profile", icon: User, labelKey: "nav.profile" as const },
+];
+
+const menuItems = [
+  { to: "/friends", icon: Users, labelKey: "nav.friends" as const },
+  { to: "/communities", icon: Layers, labelKey: "nav.communities" as const },
+  { to: "/settings", icon: Settings, labelKey: "nav.settings" as const },
+];
+
+export default function AppSidebar({ isCollapsed, onToggle }: { isCollapsed?: boolean; onToggle?: () => void }) {
   const { user, profile, logout } = useAuth();
   const [messagesFallbackBadge, setMessagesFallbackBadge] = useState(false);
   const badgeFetchAt = useRef(0);
@@ -80,13 +94,21 @@ export default function AppSidebar() {
 
   return (
     <>
-      <aside className="fixed left-0 top-0 hidden h-full w-[260px] glass-strong md:flex md:flex-col z-40">
+      <aside className={`fixed left-0 top-0 hidden h-full w-[260px] glass-strong md:flex md:flex-col z-40 transition-transform duration-300 ${isCollapsed ? '-translate-x-full' : 'translate-x-0'}`}>
         {/* Logo */}
-        <div className="p-6 pb-4">
-          <h1 className="text-2xl font-black tracking-tight">
-            <span className="logo-animated">СЛОЙ</span>
-          </h1>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-0.5 font-medium">social platform</p>
+        <div className="p-6 pb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+              Sloy
+            </h1>
+          </div>
+          <button 
+            onClick={onToggle}
+            className="p-2 rounded-xl hover:bg-white/10 text-muted-foreground transition-colors"
+            title="Свернуть"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Search */}
@@ -95,7 +117,7 @@ export default function AppSidebar() {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-2 space-y-0.5">
           {navItems.map(({ to, icon: Icon, labelKey }) => {
-            const isActive = location.pathname === to;
+            const isActive = location.pathname === to || (to === '/profile' && location.pathname.startsWith('/u/'));
             const showMsgDot = to === "/messages" && messagesFallbackBadge;
             return (
               <NavLink
@@ -155,47 +177,79 @@ export default function AppSidebar() {
         </div>
       </aside>
 
-      {/* Mobile Bottom Navigation */}
       <nav className="fixed inset-x-0 bottom-0 z-50 glass-strong border-t border-border/40 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-center justify-around px-2 py-2">
-          {navItems.map(({ to, icon: Icon, labelKey }) => {
-            const isActive = location.pathname === to;
+        <div className="grid grid-cols-5 gap-1 px-1 py-2">
+          {bottomNavItems.map(({ to, icon: Icon, labelKey }) => {
+            const isActive = location.pathname === to || (to === '/profile' && location.pathname.startsWith('/u/'));
             const showMsgDot = to === "/messages" && messagesFallbackBadge;
-            
-            // Only show main 5 items on mobile bottom nav for better spacing
-            if (["/music", "/settings"].includes(to)) return null;
-
             return (
               <NavLink
                 key={to}
                 to={to}
-                className={`relative flex flex-col items-center justify-center gap-1.5 p-2 rounded-2xl transition-all duration-300 ${
-                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                className={`relative flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] transition-colors ${
+                  isActive ? "text-primary bg-primary/10" : "text-muted-foreground"
                 }`}
               >
-                <div className={`p-2 rounded-2xl transition-all duration-300 ${isActive ? 'bg-primary/10 scale-110 shadow-inner' : ''}`}>
-                  <Icon className={`w-6 h-6 ${isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'}`} />
+                <span className="relative inline-flex">
+                  <Icon className="w-5 h-5" />
                   {showMsgDot && (
-                    <span className="absolute right-3 top-3 h-2 w-2 rounded-full bg-destructive border-2 border-background shadow-sm" />
+                    <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-destructive" />
                   )}
-                </div>
-                <span className={`text-[10px] font-bold tracking-tight transition-all ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1'}`}>
-                  {t(labelKey)}
                 </span>
+                <span className="leading-tight text-center truncate w-full px-0.5">{t(labelKey)}</span>
               </NavLink>
             );
           })}
-          
-          {/* More button for mobile */}
-          <button 
-            onClick={() => navigate("/settings")}
-            className="flex flex-col items-center justify-center gap-1.5 p-2 text-muted-foreground hover:text-foreground"
-          >
-            <div className="p-2">
-              <Settings className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-bold opacity-0">...</span>
-          </button>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <button
+                className="relative flex flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <MenuIcon className="w-5 h-5" />
+                <span className="leading-tight text-center">Ещё</span>
+              </button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-[32px] px-6 pb-12 pt-8 glass-strong border-t-border/50">
+              <SheetHeader className="mb-6">
+                <SheetTitle className="text-left text-2xl font-black">Меню</SheetTitle>
+              </SheetHeader>
+              <div className="grid grid-cols-1 gap-2">
+                {menuItems.map(({ to, icon: Icon, labelKey }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={() => {
+                      // Sheet closes automatically on navigation if not controlled,
+                      // but some Sheet implementations need explicit close.
+                    }}
+                    className="flex items-center gap-4 px-4 py-4 rounded-2xl bg-accent/30 hover:bg-accent transition-colors"
+                  >
+                    <Icon className="w-5 h-5 text-primary" />
+                    <span className="font-medium">{t(labelKey)}</span>
+                  </NavLink>
+                ))}
+                
+                <div className="h-px bg-border/50 my-2" />
+                
+                <button
+                  onClick={toggleTheme}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl bg-accent/30 hover:bg-accent transition-colors text-left"
+                >
+                  {isDark ? <Sun className="w-5 h-5 text-primary" /> : <Moon className="w-5 h-5 text-primary" />}
+                  <span className="font-medium">{isDark ? "Светлая тема" : "Тёмная тема"}</span>
+                </button>
+                
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-4 px-4 py-4 rounded-2xl bg-destructive/10 hover:bg-destructive/20 transition-colors text-destructive text-left"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span className="font-medium text-destructive">Выйти</span>
+                </button>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </nav>
     </>

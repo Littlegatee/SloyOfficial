@@ -24,6 +24,9 @@ export default function SettingsPage() {
   const [lastName, setLastName] = useState(profile?.last_name || "");
   const [status, setStatus] = useState(profile?.status || "");
   const [city, setCity] = useState(profile?.city || "");
+  const [country, setCountry] = useState((profile as any)?.country || "");
+  const [language, setLanguage] = useState((profile as any)?.language || "");
+  const [gender, setGender] = useState((profile as any)?.gender || "");
   const [birthDate, setBirthDate] = useState(profile?.birth_date || "");
   const [saving, setSaving] = useState(false);
 
@@ -183,6 +186,9 @@ export default function SettingsPage() {
         last_name: lastName,
         status,
         city,
+        country,
+        language,
+        gender,
         birth_date: birthDate,
       });
       await refreshProfile();
@@ -350,12 +356,12 @@ export default function SettingsPage() {
           {activeTab === "profile" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
               <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                <User className="w-5 h-5 text-primary" /> Настройки профиля
+                <User className="w-5 h-5 text-primary" /> {t("settings.tab.profile")}
               </h3>
               <div className="space-y-5 max-w-xl">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Имя</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.firstName")}</label>
                     <input
                       type="text"
                       value={firstName}
@@ -364,7 +370,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Фамилия</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.lastName")}</label>
                     <input
                       type="text"
                       value={lastName}
@@ -374,7 +380,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">О себе</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.status")}</label>
                   <textarea
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
@@ -384,23 +390,110 @@ export default function SettingsPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Город</label>
-                    <input
-                      type="text"
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.city")}</label>
+                    <select
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                    />
+                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                    >
+                      <option value="">{t("profile.notSpecified")}</option>
+                      <option value="Москва">Москва</option>
+                      <option value="Санкт-Петербург">Санкт-Петербург</option>
+                      <option value="Новосибирск">Новосибирск</option>
+                      <option value="Екатеринбург">Екатеринбург</option>
+                      <option value="Казань">Казань</option>
+                      <option value="Нижний Новгород">Нижний Новгород</option>
+                      <option value="Челябинск">Челябинск</option>
+                      <option value="Самара">Самара</option>
+                      <option value="Омск">Омск</option>
+                      <option value="Ростов-на-Дону">Ростов-на-Дону</option>
+                      <option value="Уфа">Уфа</option>
+                      <option value="Красноярск">Красноярск</option>
+                      <option value="Воронеж">Воронеж</option>
+                      <option value="Пермь">Пермь</option>
+                      <option value="Волгоград">Волгоград</option>
+                      <option value="Краснодар">Краснодар</option>
+                      <option value="Саратов">Саратов</option>
+                      <option value="Тюмень">Тюмень</option>
+                      <option value="Тольятти">Тольятти</option>
+                      <option value="Ижевск">Ижевск</option>
+                      <option value="Барнаул">Барнаул</option>
+                      <option value="Ульяновск">Ульяновск</option>
+                      <option value="Иркутск">Иркутск</option>
+                      <option value="Хабаровск">Хабаровск</option>
+                      <option value="Махачкала">Махачкала</option>
+                      <option value="Владивосток">Владивосток</option>
+                      <option value="Грозный">Грозный</option>
+                      <option value="Другой">Другой</option>
+                    </select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Дата рождения</label>
-                    <input
-                      type="date"
-                      value={birthDate}
-                      onChange={(e) => setBirthDate(e.target.value)}
-                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
-                    />
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.country")}</label>
+                    <select
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                    >
+                      <option value="">{t("profile.notSpecified")}</option>
+                      <option value="Россия">Россия</option>
+                      <option value="Беларусь">Беларусь</option>
+                      <option value="Казахстан">Казахстан</option>
+                      <option value="Армения">Армения</option>
+                      <option value="Грузия">Грузия</option>
+                      <option value="Узбекистан">Узбекистан</option>
+                      <option value="Азербайджан">Азербайджан</option>
+                      <option value="Кыргызстан">Кыргызстан</option>
+                      <option value="Таджикистан">Таджикистан</option>
+                      <option value="Турция">Турция</option>
+                      <option value="Германия">Германия</option>
+                      <option value="США">США</option>
+                      <option value="ОАЭ">ОАЭ</option>
+                      <option value="Другая">Другая</option>
+                    </select>
                   </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.language")}</label>
+                    <select
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                    >
+                      <option value="">{t("profile.notSpecified")}</option>
+                      <option value="Русский">Русский</option>
+                      <option value="English">English</option>
+                      <option value="Татарча">Татарча</option>
+                      <option value="Нохчийн">Нохчийн</option>
+                      <option value="Հայերեն">Հայերեն</option>
+                      <option value="Türkçe">Türkçe</option>
+                      <option value="Deutsch">Deutsch</option>
+                      <option value="Français">Français</option>
+                      <option value="Español">Español</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{t("profile.gender")}</label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background appearance-none"
+                    >
+                      <option value="">{t("profile.notSpecified")}</option>
+                      <option value="Мужской">Мужской</option>
+                      <option value="Женский">Женский</option>
+                      <option value="Другой">Другой</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Дата рождения</label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-background"
+                  />
                 </div>
                 <div className="pt-4">
                   <button
@@ -409,7 +502,7 @@ export default function SettingsPage() {
                     className="flex items-center justify-center gap-2 w-full md:w-auto px-8 py-3 rounded-2xl btn-gradient text-sm font-medium"
                   >
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Сохранить изменения
+                    {t("profile.save")}
                   </button>
                 </div>
               </div>

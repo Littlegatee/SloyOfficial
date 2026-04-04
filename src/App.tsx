@@ -67,6 +67,7 @@ function AppRoutes() {
       <Route path="/p/:postId" element={<ProtectedRoute><PostSharePage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/profile/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/u/:userId" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
       <Route path="/communities" element={<ProtectedRoute><CommunitiesPage /></ProtectedRoute>} />
       <Route path="/communities/:id" element={<ProtectedRoute><CommunityProfilePage /></ProtectedRoute>} />

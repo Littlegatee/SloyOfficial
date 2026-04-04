@@ -5,10 +5,12 @@
   "start_url": "/feed",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#0b1020",
   "theme_color": "#7c3aed",
   "description": "Sloy social web app",
+  "prefer_related_applications": false,
   "shortcuts": [
     {
       "name": "Лента",
@@ -23,15 +25,15 @@
   ],
   "icons": [
     {
-      "src": "/placeholder.svg",
+      "src": "/favicon.ico",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/x-icon",
       "purpose": "any"
     },
     {
-      "src": "/placeholder.svg",
+      "src": "/favicon.ico",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/x-icon",
       "purpose": "any maskable"
     }
   ]

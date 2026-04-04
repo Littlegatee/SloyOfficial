@@ -59,10 +59,23 @@ export type Key =
   | "admin.revoke"
   | "admin.done"
   | "common.save"
-  | "common.cancel";
+  | "common.cancel"
+  | "profile.edit"
+  | "profile.firstName"
+  | "profile.lastName"
+  | "profile.status"
+  | "profile.city"
+  | "profile.country"
+  | "profile.language"
+  | "profile.gender"
+  | "profile.interests"
+  | "profile.movies"
+  | "profile.games"
+  | "profile.save"
+  | "profile.notSpecified";
 
 const ru: Record<Key, string> = {
-  "nav.feed": "Лента",
+  "nav.feed": "Главное",
   "nav.profile": "Профиль",
   "nav.friends": "Друзья",
   "nav.communities": "Сообщества",
@@ -110,6 +123,19 @@ const ru: Record<Key, string> = {
   "admin.done": "Готово",
   "common.save": "Сохранить",
   "common.cancel": "Отмена",
+  "profile.edit": "Редактировать профиль",
+  "profile.firstName": "Имя",
+  "profile.lastName": "Фамилия",
+  "profile.status": "Статус (о себе)",
+  "profile.city": "Город",
+  "profile.country": "Страна",
+  "profile.language": "Язык",
+  "profile.gender": "Пол",
+  "profile.interests": "Интересы",
+  "profile.movies": "Любимые фильмы",
+  "profile.games": "Любимые игры",
+  "profile.save": "Сохранить",
+  "profile.notSpecified": "Не указано",
 };
 
 const enGB: Record<Key, string> = {
@@ -161,6 +187,19 @@ const enGB: Record<Key, string> = {
   "admin.done": "Done",
   "common.save": "Save",
   "common.cancel": "Cancel",
+  "profile.edit": "Edit profile",
+  "profile.firstName": "First name",
+  "profile.lastName": "Last name",
+  "profile.status": "Status (about)",
+  "profile.city": "City",
+  "profile.country": "Country",
+  "profile.language": "Language",
+  "profile.gender": "Gender",
+  "profile.interests": "Interests",
+  "profile.movies": "Favorite movies",
+  "profile.games": "Favorite games",
+  "profile.save": "Save profile",
+  "profile.notSpecified": "Not specified",
 };
 
 const enUS: Record<Key, string> = {
@@ -168,23 +207,69 @@ const enUS: Record<Key, string> = {
   "settings.privacy.private": "Friends only (hidden from search for everyone else)",
 };
 
-const tt: Record<Key, string> = { ...enGB, "nav.feed": "Тасма", "nav.music": "Музыка", "music.title": "Музыка" };
-const ce: Record<Key, string> = { ...enGB, "nav.feed": "Тасма", "music.title": "Музыка" };
-const hy: Record<Key, string> = { ...enGB, "nav.feed": "Լեզու", "music.title": "Երաժշտություն" };
+const tt: Record<Key, string> = {
+  ...ru,
+  "nav.feed": "Тасма",
+  "nav.profile": "Профиль",
+  "nav.friends": "Дуслар",
+  "nav.communities": "Җәмгыятьләр",
+  "nav.messages": "Хәбәрләр",
+  "nav.settings": "Көйләүләр",
+  "nav.music": "Музыка",
+  "settings.title": "Көйләүләр",
+};
+
+const ce: Record<Key, string> = {
+  ...ru,
+  "nav.feed": "Тасма",
+  "nav.profile": "Профиль",
+  "nav.friends": "Досташ",
+  "nav.communities": "Йукъараллаш",
+  "nav.messages": "Хаамаш",
+  "nav.settings": "ГIирс",
+  "nav.music": "Музыка",
+};
+
+const hy: Record<Key, string> = {
+  ...enGB,
+  "nav.feed": "Լրահոս",
+  "nav.profile": "Պրոֆիլ",
+  "nav.friends": "Ընկերներ",
+  "nav.communities": "Համայնքներ",
+  "nav.messages": "Հաղորդագրություններ",
+  "nav.settings": "Կարգավորումներ",
+  "nav.music": "Երաժշտություն",
+  "music.title": "Երաժշտություն",
+};
+
 const tr: Record<Key, string> = {
   ...enGB,
   "nav.feed": "Akış",
   "nav.profile": "Profil",
+  "nav.friends": "Arkadaşlar",
+  "nav.communities": "Topluluklar",
+  "nav.messages": "Mesajlar",
+  "nav.settings": "Ayarlar",
   "nav.music": "Müzik",
   "music.title": "Müzik",
   "settings.title": "Ayarlar",
+  "common.save": "Kaydet",
+  "common.cancel": "İptal",
 };
+
 const de: Record<Key, string> = {
   ...enGB,
   "nav.feed": "Feed",
+  "nav.profile": "Profil",
+  "nav.friends": "Freunde",
+  "nav.communities": "Communities",
+  "nav.messages": "Nachrichten",
+  "nav.settings": "Einstellungen",
   "nav.music": "Musik",
   "music.title": "Musik",
   "settings.title": "Einstellungen",
+  "common.save": "Speichern",
+  "common.cancel": "Abbrechen",
 };
 
 export const TRANSLATIONS: Record<AppLocale, Record<Key, string>> = {

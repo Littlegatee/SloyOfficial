@@ -1,9 +1,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import prisma, { withDbReconnectRetry } from '../prisma.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 function sanitizePostsForClient(posts: any[], viewerId: string) {
   return posts.map((p) => {
@@ -151,7 +150,7 @@ router.patch('/:id/members/:memberUserId', authenticateToken, async (req: any, r
 // Get community details
 router.get('/:id', authenticateToken, async (req: any, res) => {
   try {
-    const community = await prisma.community.findUnique({
+    const community = await withDbReconnectRetry(() => prisma.community.findUnique({
       where: { id: req.params.id },
       include: {
         _count: { select: { members: true } },
@@ -159,7 +158,7 @@ router.get('/:id', authenticateToken, async (req: any, res) => {
           where: { user_id: req.user.id }
         }
       }
-    });
+    }));
 
     if (!community) {
       return res.status(404).json({ error: "Сообщество не найдено" });

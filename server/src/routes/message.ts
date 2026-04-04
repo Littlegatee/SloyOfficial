@@ -1,8 +1,10 @@
 import express from 'express';
-import prisma from '../prisma.js';
+import prisma, { withDbReconnectRetry } from '../prisma.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { io } from '../socket.js';
 import { notifyUserByPush } from '../lib/pushNotify.js';
+
+import { getLinkPreview } from 'link-preview-js';
 
 const router = express.Router();
 
@@ -10,31 +12,6 @@ function clampInt(value: any, min: number, max: number, fallback: number) {
   const n = Number.parseInt(String(value ?? ''), 10);
   if (Number.isNaN(n)) return fallback;
   return Math.max(min, Math.min(max, n));
-}
-
-function isClosedConnectionError(error: any) {
-  const message = String(error?.message || '');
-  return (
-    error?.code === 'P1017' ||
-    message.includes('Server has closed the connection') ||
-    message.includes('Engine is not yet connected')
-  );
-}
-
-async function withDbReconnectRetry<T>(fn: () => Promise<T>): Promise<T> {
-  let lastError: any = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      lastError = error;
-      if (!isClosedConnectionError(error)) throw error;
-      await prisma.$disconnect().catch(() => undefined);
-      await prisma.$connect();
-      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
-    }
-  }
-  throw lastError;
 }
 
 // Get dialogs
@@ -442,7 +419,7 @@ router.post('/:userId/read', authenticateToken, async (req: any, res) => {
 
 // Send message
 router.post('/', authenticateToken, async (req: any, res) => {
-  const { recipient_id, content_text, message_type = 'TEXT', media_url, voice_duration, reply_to_id } = req.body;
+  const { recipient_id, content_text, message_type = 'TEXT', media_url, voice_duration, reply_to_id, album_id, poll } = req.body;
   const sender_id = req.user.id;
   try {
     // Saved Messages (self-chat) is always allowed
@@ -487,7 +464,29 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const message = await prisma.message.create({
+    // Link Preview logic
+    let link_preview = null;
+    if (message_type === 'TEXT' && content_text) {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const match = content_text.match(urlRegex);
+      if (match) {
+        try {
+          const preview: any = await getLinkPreview(match[0], { timeout: 3000 });
+          if (preview && (preview.title || preview.description)) {
+            link_preview = {
+              url: preview.url,
+              title: preview.title || "Ссылка",
+              description: preview.description || "",
+              image: preview.images?.[0] || preview.favicons?.[0] || null
+            };
+          }
+        } catch (e) {
+          console.warn("Failed to fetch link preview:", e);
+        }
+      }
+    }
+
+    const message = await (prisma.message as any).create({
       data: { 
         sender_id, 
         recipient_id, 
@@ -495,17 +494,38 @@ router.post('/', authenticateToken, async (req: any, res) => {
         message_type,
         media_url,
         voice_duration,
-        reply_to_id
+        reply_to_id,
+        album_id,
+        link_preview: link_preview as any
       },
       include: {
         reply_to: {
           include: {
             sender: { include: { profile: true } }
           }
-        }
+        },
+        reactions: { select: { emoji: true, user_id: true } }
       }
     });
+
+    // Create poll if provided
+    if (message_type === 'TEXT' && poll && poll.question && Array.isArray(poll.options)) {
+      await (prisma as any).poll.create({
+        data: {
+          message_id: message.id,
+          question: poll.question,
+          options: poll.options as any,
+          multiple: !!poll.multiple,
+          anonymous: !!poll.anonymous
+        }
+      });
+    }
     
+    // Clear draft if it exists
+    await (prisma as any).chatDraft.deleteMany({
+      where: { user_id: sender_id, recipient_id }
+    });
+
     // Emit to recipient
     io.to(recipient_id).emit('receive_message', message);
     if (!isSelf) {
@@ -550,6 +570,129 @@ router.post('/', authenticateToken, async (req: any, res) => {
     res.status(400).json({ error: error.message });
   }
 });
+
+// Drafts API
+router.post('/drafts', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  const { recipient_id, content_text, reply_to_id } = req.body;
+  try {
+    const draft = await (prisma as any).chatDraft.upsert({
+      where: { user_id_recipient_id: { user_id, recipient_id } },
+      create: { user_id, recipient_id, content_text, reply_to_id },
+      update: { content_text, reply_to_id, updated_at: new Date() }
+    });
+    res.json(draft);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/drafts', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  try {
+    const drafts = await (prisma as any).chatDraft.findMany({ where: { user_id } });
+    res.json(drafts);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Folders API
+router.get('/folders', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  try {
+    const folders = await (prisma as any).chatFolder.findMany({
+      where: { user_id },
+      orderBy: { position: 'asc' }
+    });
+    res.json(folders);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/folders', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  const { name, icon, filters, position } = req.body;
+  try {
+    const folder = await (prisma as any).chatFolder.create({
+      data: { user_id, name, icon, filters, position: position || 0 }
+    });
+    res.json(folder);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Polls API
+router.post('/polls/:pollId/vote', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  const poll_id = req.params.pollId;
+  const { option_id } = req.body;
+  try {
+    const poll = await (prisma as any).poll.findUnique({ where: { id: poll_id } });
+    if (!poll) return res.status(404).json({ error: "Опрос не найден" });
+    if (poll.closed) return res.status(400).json({ error: "Опрос завершен" });
+
+    if (!poll.multiple) {
+      await (prisma as any).pollVote.deleteMany({ where: { poll_id, user_id } });
+    }
+
+    const vote = await (prisma as any).pollVote.upsert({
+      where: { poll_id_user_id_option_id: { poll_id, user_id, option_id } },
+      create: { poll_id, user_id, option_id },
+      update: {}
+    });
+
+    // Notify participants via socket (optional)
+    res.json(vote);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Stickers API
+router.get('/sticker-packs', authenticateToken, async (req: any, res) => {
+  try {
+    const packs = await (prisma as any).stickerPack.findMany({
+      include: { stickers: { orderBy: { position: 'asc' } } }
+    });
+    res.json(packs);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Chat Configs API
+router.get('/configs/:otherUserId', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  const other_user_id = req.params.otherUserId;
+  try {
+    const config = await (prisma as any).userChatConfig.findUnique({
+      where: { user_id_other_user_id: { user_id, other_user_id } }
+    });
+    res.json(config || {});
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/configs/:otherUserId', authenticateToken, async (req: any, res) => {
+  const user_id = req.user.id;
+  const other_user_id = req.params.otherUserId;
+  const { bubble_color, text_color, notif_sound } = req.body;
+  try {
+    const config = await (prisma as any).userChatConfig.upsert({
+      where: { user_id_other_user_id: { user_id, other_user_id } },
+      create: { user_id, other_user_id, bubble_color, text_color, notif_sound },
+      update: { bubble_color, text_color, notif_sound }
+    });
+    res.json(config);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 
 // Archive/unarchive dialog for current user
 router.post('/dialogs/:userId/archive', authenticateToken, async (req: any, res) => {

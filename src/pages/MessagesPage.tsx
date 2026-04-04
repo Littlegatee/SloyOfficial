@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Send, ArrowLeft, Loader2, Mic, Square, Smile, Play, Pause, Search, X, Paperclip, FileIcon, ImageIcon, VideoIcon, Camera, Image as ImageIcon2, Trash2, Edit2, Check, CheckCheck, Reply, Pin, Forward, CalendarDays, BellOff, Archive, ArchiveX, MoreHorizontal } from "lucide-react";
+import { Send, ArrowLeft, Loader2, Mic, Square, Smile, Play, Pause, Search, X, Paperclip, FileIcon, ImageIcon, VideoIcon, Camera, Image as ImageIcon2, Trash2, Edit2, Check, CheckCheck, Reply, Pin, Forward, CalendarDays, BellOff, Archive, ArchiveX, MoreHorizontal, Folder, Heart, ThumbsUp, Laugh, Frown, Angry } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useAuth, Profile } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -9,6 +9,10 @@ import { socket } from "@/lib/socket";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
 import { Dialog as UIDialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Virtuoso } from 'react-virtuoso';
+import WaveSurfer from 'wavesurfer.js';
+import { motion, AnimatePresence } from 'framer-motion';
+import _ from 'lodash';
 
 interface Dialog {
   userId: string;
@@ -18,6 +22,7 @@ interface Dialog {
   lastMessage: string;
   unreadCount: number;
   time: string;
+  timestamp: number;
   pinned?: boolean;
   muted?: boolean;
   mutedUntil?: string | null;
@@ -30,10 +35,26 @@ interface ChatMessage {
   id: string;
   sender_id: string;
   recipient_id: string;
-  message_type: 'TEXT' | 'VOICE' | 'STICKER' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE';
+  message_type: 'TEXT' | 'VOICE' | 'STICKER' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE' | 'POLL';
   content_text: string | null;
   media_url: string | null;
   voice_duration: number | null;
+  album_id?: string | null;
+  link_preview?: {
+    url: string;
+    title: string;
+    description: string;
+    image?: string | null;
+  } | null;
+  poll?: {
+    id: string;
+    question: string;
+    options: Array<{ id: number; text: string }>;
+    multiple: boolean;
+    anonymous: boolean;
+    closed: boolean;
+    votes: Array<{ option_id: number; user_id: string }>;
+  } | null;
   is_edited: boolean;
   is_read: boolean;
   reactions?: Array<{ emoji: string; user_id: string }>;
@@ -59,10 +80,21 @@ interface ChatMessage {
   forwarded_from_id?: string | null;
 }
 
+interface ChatFolder {
+  id: string;
+  name: string;
+  icon?: string | null;
+  filters: {
+    types: string[];
+    includeIds: string[];
+    excludeIds: string[];
+  };
+}
+
 interface PendingOutboundMessage {
   id: string;
   recipient_id: string;
-  message_type: 'TEXT' | 'STICKER' | 'VOICE' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE';
+  message_type: 'TEXT' | 'STICKER' | 'VOICE' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE' | 'POLL';
   content_text: string | null;
   media_url: string | null;
   voice_duration: number | null;
@@ -122,8 +154,114 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
   return new Blob([view], { type: 'audio/wav' });
 }
 
+const EMOJI_LIST = ["❤️", "👍", "😂", "😮", "😢", "🔥", "🎉", "🤔", "👏", "⚡️", "✨", "💯", "✅", "❌", "👀", "🤝"];
+
+const VoiceWaveform = ({ url, duration, isMine }: { url: string; duration: number; isMine: boolean }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const waveSurferRef = useRef<WaveSurfer | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    waveSurferRef.current = WaveSurfer.create({
+      container: containerRef.current,
+      waveColor: isMine ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.1)',
+      progressColor: isMine ? '#fff' : '#7c3aed',
+      cursorColor: 'transparent',
+      barWidth: 2,
+      barGap: 3,
+      barRadius: 3,
+      height: 30,
+      url: url,
+    });
+
+    waveSurferRef.current.on('play', () => setIsPlaying(true));
+    waveSurferRef.current.on('pause', () => setIsPlaying(false));
+    waveSurferRef.current.on('audioprocess', (time) => setCurrentTime(time));
+
+    return () => waveSurferRef.current?.destroy();
+  }, [url, isMine]);
+
+  return (
+    <div className="flex items-center gap-3 py-1 min-w-[200px]">
+      <button 
+        onClick={() => waveSurferRef.current?.playPause()}
+        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isMine ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}
+      >
+        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+      </button>
+      <div className="flex-1 flex flex-col gap-1">
+        <div ref={containerRef} className="w-full" />
+        <div className="flex justify-between text-[10px] opacity-70">
+          <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)}</span>
+          <span>{new Date(duration * 1000).toISOString().substr(14, 5)}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PhotoGallery = ({ messages }: { messages: ChatMessage[] }) => {
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  
+  // Telegram-style mosaic logic for 1-10 photos
+  const count = messages.length;
+  let gridClass = "grid-cols-2";
+  if (count === 1) gridClass = "grid-cols-1";
+  else if (count === 3) gridClass = "grid-cols-2";
+  else if (count >= 4) gridClass = "grid-cols-2 sm:grid-cols-3";
+
+  return (
+    <>
+      <div className={`grid gap-0.5 rounded-2xl overflow-hidden ${gridClass} max-w-[280px] sm:max-w-sm border border-white/10 shadow-lg`}>
+        {messages.map((msg, idx) => {
+          let spanClass = "";
+          // Custom spans for mosaic look
+          if (count === 3 && idx === 0) spanClass = "row-span-2 h-full";
+          if (count === 5 && (idx === 0 || idx === 1)) spanClass = "col-span-1 h-32";
+          if (count === 5 && idx >= 2) spanClass = "h-24";
+          
+          return (
+            <div 
+              key={msg.id} 
+              className={`relative cursor-pointer hover:brightness-110 transition-all overflow-hidden bg-black/20 ${spanClass} ${count === 1 ? 'aspect-auto max-h-[450px]' : 'aspect-square'}`}
+              onClick={() => setFullscreenImage(msg.media_url!)}
+            >
+              <img 
+                src={msg.media_url!} 
+                alt="" 
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+          );
+        })}
+      </div>
+      {fullscreenImage && (
+        <UIDialog open={!!fullscreenImage} onOpenChange={() => setFullscreenImage(null)}>
+          <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-transparent border-none shadow-none flex items-center justify-center">
+            <DialogTitle className="sr-only">Просмотр фото</DialogTitle>
+            <div className="relative w-full h-full flex items-center justify-center">
+              <img src={fullscreenImage} alt="" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" />
+              <button 
+                onClick={() => setFullscreenImage(null)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </DialogContent>
+        </UIDialog>
+      )}
+    </>
+  );
+};
+
 export default function MessagesPage() {
   const { user } = useAuth();
+  const virtuosoRef = useRef<any>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,6 +290,9 @@ export default function MessagesPage() {
   const [muteMenuOpen, setMuteMenuOpen] = useState(false);
   const [chatActionsOpen, setChatActionsOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [folders, setFolders] = useState<ChatFolder[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string>("all");
+  const [drafts, setDrafts] = useState<Record<string, { content_text: string; reply_to_id?: string | null }>>({});
   const [transportOnline, setTransportOnline] = useState<boolean>(navigator.onLine);
   const [socketReady, setSocketReady] = useState<boolean>(socket.connected);
   const [pendingOutboundCount, setPendingOutboundCount] = useState(0);
@@ -193,44 +334,6 @@ export default function MessagesPage() {
       return Math.min(prev, pinnedMessages.length - 1);
     });
   }, [pinnedMessages]);
-
-  const jumpToMessage = useCallback((messageId: string) => {
-    const el = document.getElementById(`msg-${messageId}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el?.classList.add('bg-primary/10');
-    setTimeout(() => el?.classList.remove('bg-primary/10'), 1200);
-  }, []);
-
-  const handlePinnedTap = useCallback(() => {
-    if (!pinnedMessages.length) return;
-    const nextIndex = pinnedMessages.length > 1 ? (currentPinnedIndex + 1) % pinnedMessages.length : 0;
-    setCurrentPinnedIndex(nextIndex);
-    jumpToMessage(pinnedMessages[nextIndex].id);
-  }, [currentPinnedIndex, jumpToMessage, pinnedMessages]);
-
-  const unpinCurrentMessage = useCallback(async () => {
-    const current = pinnedMessages[currentPinnedIndex];
-    if (!current || !selectedUserId) return;
-    try {
-      await api.post(`/messages/${current.id}/pin`);
-      await fetchPinnedMessages(selectedUserId);
-      toast.success("Откреплено");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "Не удалось открепить");
-    }
-  }, [currentPinnedIndex, pinnedMessages, selectedUserId]);
-
-  const unpinAllMessages = useCallback(async () => {
-    if (!selectedUserId || pinnedMessages.length === 0) return;
-    try {
-      await Promise.all(pinnedMessages.map((m) => api.post(`/messages/${m.id}/pin`)));
-      await fetchPinnedMessages(selectedUserId);
-      setPinnedListOpen(false);
-      toast.success("Все закрепы очищены");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "Не удалось открепить все");
-    }
-  }, [pinnedMessages, selectedUserId]);
 
   const draftStorageKey = useCallback((otherUserId: string) => {
     if (!user?.id) return null;
@@ -353,6 +456,48 @@ export default function MessagesPage() {
     setPendingOutboundCount(readOutbox().length);
   }, [readOutbox]);
 
+  // Folders and Drafts: fetch from server
+  useEffect(() => {
+    if (!user) return;
+    const fetchData = async () => {
+      try {
+        const [{ data: foldersData }, { data: draftsData }] = await Promise.all([
+          api.get("/messages/folders"),
+          api.get("/messages/drafts")
+        ]);
+        setFolders(foldersData);
+        const draftsMap: Record<string, any> = {};
+        draftsData.forEach((d: any) => {
+          draftsMap[d.recipient_id] = { content_text: d.content_text, reply_to_id: d.reply_to_id };
+        });
+        setDrafts(draftsMap);
+      } catch (e) {
+        console.error("Error fetching folders/drafts:", e);
+      }
+    };
+    fetchData();
+  }, [user]);
+
+  // Sync Draft to server (debounced)
+  const syncDraftToServer = useCallback(
+    _.debounce(async (recipientId: string, text: string, replyToId?: string | null) => {
+      try {
+        await api.post("/messages/drafts", { recipient_id: recipientId, content_text: text, reply_to_id: replyToId });
+      } catch (e) {
+        console.error("Error syncing draft:", e);
+      }
+    }, 1500),
+    []
+  );
+
+  useEffect(() => {
+    if (!selectedUserId || editingMessageId) return;
+    const currentDraft = drafts[selectedUserId]?.content_text || "";
+    if (messageText !== currentDraft) {
+      syncDraftToServer(selectedUserId, messageText, replyingToMessage?.id);
+    }
+  }, [messageText, selectedUserId, drafts, replyingToMessage, editingMessageId, syncDraftToServer]);
+
   // Mini profile
   const [showMiniProfile, setShowMiniProfile] = useState(false);
   const [miniProfileData, setMiniProfileData] = useState<Profile | null>(null);
@@ -361,14 +506,74 @@ export default function MessagesPage() {
   // Fullscreen image viewer
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  // Stickers
-  const [showStickers, setShowStickers] = useState(false);
-  const MOCK_STICKERS = [
-    "https://api.dicebear.com/7.x/bottts/svg?seed=1",
-    "https://api.dicebear.com/7.x/bottts/svg?seed=2",
-    "https://api.dicebear.com/7.x/bottts/svg?seed=3",
-    "https://api.dicebear.com/7.x/bottts/svg?seed=4",
-  ]; // Замените эти ссылки на пути к вашим реальным стикерам в папке public/ (например: '/stickers/1.png')
+  // Chat Config
+  const [chatConfig, setChatConfig] = useState<{ bubble_color?: string; notif_sound?: string } | null>(null);
+
+  useEffect(() => {
+    if (selectedUserId) {
+      const fetchConfig = async () => {
+        try {
+          const { data } = await api.get(`/messages/chat/${selectedUserId}/config`);
+          setChatConfig(data);
+        } catch (e) {
+          console.error("Error fetching chat config:", e);
+        }
+      };
+      fetchConfig();
+    }
+  }, [selectedUserId]);
+
+  const updateChatConfig = async (updates: { bubble_color?: string; notif_sound?: string }) => {
+    if (!selectedUserId) return;
+    try {
+      const { data } = await api.post(`/messages/chat/${selectedUserId}/config`, updates);
+      setChatConfig(data);
+      toast.success("Настройки чата обновлены");
+    } catch (e) {
+      toast.error("Не удалось обновить настройки");
+    }
+  };
+   // Polls
+  const [showPollCreator, setShowPollCreator] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+   const [pollOptions, setPollOptions] = useState(["", ""]);
+   const [pollMultiple, setPollMultiple] = useState(false);
+   const [pollAnonymous, setPollAnonymous] = useState(true);
+
+   const handleCreatePoll = async () => {
+     const options = pollOptions.filter(o => o.trim()).map((o, i) => ({ id: i + 1, text: o.trim() }));
+     if (!pollQuestion.trim() || options.length < 2) {
+       toast.error("Введите вопрос и как минимум 2 варианта ответа");
+       return;
+     }
+     
+     // sendMessage('POLL', pollQuestion, null, null, options, pollMultiple, pollAnonymous);
+   };
+
+   // Stickers
+   const [showStickers, setShowStickers] = useState(false);
+  const [stickerPacks, setStickerPacks] = useState<any[]>([]);
+  const [activePackId, setActivePackId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showStickers) {
+      const fetchPacks = async () => {
+        try {
+          const { data } = await api.get("/messages/sticker-packs");
+          setStickerPacks(data);
+          if (data.length > 0 && !activePackId) setActivePackId(data[0].id);
+        } catch (e) {
+          console.error("Error fetching sticker packs:", e);
+        }
+      };
+      fetchPacks();
+    }
+  }, [showStickers]);
+
+  const activeStickers = useMemo(() => {
+    if (!activePackId) return [];
+    return stickerPacks.find(p => p.id === activePackId)?.stickers || [];
+  }, [stickerPacks, activePackId]);
 
   // Voice Recording
   const [isRecording, setIsRecording] = useState(false);
@@ -398,6 +603,7 @@ export default function MessagesPage() {
 
   // Attachments
   const [showAttachments, setShowAttachments] = useState(false);
+  const [isUploadingMultiple, setIsUploadingMultiple] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
 
@@ -440,27 +646,46 @@ export default function MessagesPage() {
     });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'MEDIA' | 'FILE') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    // Check size limit (e.g., 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("Файл слишком большой (максимум 50MB)");
+    if (files.some(f => f.size > 50 * 1024 * 1024)) {
+      toast.error("Один из файлов слишком большой (максимум 50MB)");
       return;
     }
 
     try {
-      const base64data =
-        type === "MEDIA" && file.type.startsWith("image/")
-          ? await compressImageToDataUrl(file)
-          : await fileToDataUrl(file);
-      sendMessage(type, file.name, base64data);
+      if (files.length > 1 && type === 'MEDIA') {
+        setIsUploadingMultiple(true);
+        const albumId = `album_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        for (const file of files) {
+          const base64data = file.type.startsWith("image/")
+            ? await compressImageToDataUrl(file)
+            : await fileToDataUrl(file);
+          
+          await api.post("/messages", {
+            recipient_id: selectedUserId,
+            message_type: 'MEDIA',
+            media_url: base64data,
+            album_id: albumId
+          });
+        }
+        fetchDialogs();
+        loadMessagesPage(selectedUserId!, null, 'replace');
+      } else {
+        const file = files[0];
+        const base64data =
+          type === "MEDIA" && file.type.startsWith("image/")
+            ? await compressImageToDataUrl(file)
+            : await fileToDataUrl(file);
+        sendMessage(type, file.name, base64data);
+      }
     } catch {
-      toast.error("Не удалось подготовить файл");
+      toast.error("Не удалось подготовить файлы");
+    } finally {
+      setIsUploadingMultiple(false);
     }
     setShowAttachments(false);
-    
-    // Reset input
     if (e.target) e.target.value = '';
   };
 
@@ -473,6 +698,7 @@ export default function MessagesPage() {
         const formattedDialogs: Dialog[] = (data as any[]).map((d: any) => ({
           ...d,
           time: new Date(d.time).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+          timestamp: new Date(d.time).getTime(),
         }));
         // Keep server order mostly; ensure "Избранное" stays on top, then pinned.
         const saved =
@@ -484,7 +710,12 @@ export default function MessagesPage() {
         const rest = formattedDialogs.filter(
           d => !d.isSaved && !(d.userId === user.id && (d.first_name === "Избранное" || d.first_name === "Saved Messages"))
         );
-        const sortedRest = [...rest].sort((a, b) => (Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))));
+        const sortedRest = [...rest].sort((a, b) => {
+          if (a.pinned !== b.pinned) {
+            return (Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
+          }
+          return b.timestamp - a.timestamp;
+        });
         const finalDialogs = saved ? [saved, ...sortedRest] : sortedRest;
         setDialogs(finalDialogs);
         if (dialogsCacheKey) {
@@ -512,7 +743,8 @@ export default function MessagesPage() {
                   avatar_url: profileData.avatar_url,
                   lastMessage: "Новый диалог",
                   unreadCount: 0,
-                  time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })
+                  time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+                  timestamp: Date.now(),
                 }, ...prev]);
                 openChat(initUserId, profileData.first_name, profileData.avatar_url);
               }
@@ -782,8 +1014,14 @@ export default function MessagesPage() {
     }
   };
 
-  const sendMessage = async (type: 'TEXT' | 'STICKER' | 'VOICE' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE' = 'TEXT', content: string | null = null, mediaUrl: string | null = null, voiceDuration: number | null = null) => {
-    const textToSend = type === 'TEXT' ? (content || messageText.trim()) : content;
+  const sendMessage = async (
+    type: 'TEXT' | 'STICKER' | 'VOICE' | 'MEDIA' | 'FILE' | 'VIDEO_CIRCLE' | 'POLL' = 'TEXT', 
+    content: string | null = null, 
+    mediaUrl: string | null = null, 
+    voiceDuration: number | null = null,
+    pollData?: { question: string, options: any[], multiple: boolean, anonymous: boolean }
+  ) => {
+    const textToSend = type === 'TEXT' || type === 'POLL' ? (content || messageText.trim()) : content;
     
     if (type === 'TEXT' && !textToSend) return;
     if (!user || !selectedUserId) return;
@@ -811,6 +1049,7 @@ export default function MessagesPage() {
         media_url: mediaUrl,
         voice_duration: voiceDuration,
         reply_to_id: replyingToMessage?.id || null,
+        poll: pollData,
       };
       const { data } = await api.post("/messages", payload);
       if (data) {
@@ -1694,194 +1933,6 @@ export default function MessagesPage() {
     );
   };
 
-  const MessageItem = ({ msg, isMine }: { msg: ChatMessage, isMine: boolean }) => {
-    const [swipeOffset, setSwipeOffset] = useState(0);
-    const itemRef = useRef<HTMLDivElement>(null);
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-      itemRef.current!.dataset.startX = e.touches[0].clientX.toString();
-    };
-
-    const handleTouchMove = (e: React.TouchEvent) => {
-      const startX = parseFloat(itemRef.current!.dataset.startX || '0');
-      const currentX = e.touches[0].clientX;
-      const diff = currentX - startX;
-      
-      if (diff < 0 && diff > -60) {
-        setSwipeOffset(diff);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      if (swipeOffset < -40) {
-        setReplyingToMessage(msg);
-      }
-      setSwipeOffset(0);
-    };
-
-    const timeString = new Date(msg.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
-
-    return (
-      <div 
-        ref={itemRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className={`flex ${isMine ? "justify-end" : "justify-start"} relative`}
-      >
-        <div 
-          className="relative group max-w-[88vw] sm:max-w-[75%] min-w-0 transition-transform duration-200 ease-out"
-          style={{ transform: `translateX(${swipeOffset}px)` }}
-        >
-          <MessageActions msg={msg} isMine={isMine} />
-          <div className={`px-4 py-2.5 text-sm ${
-            msg.message_type === 'STICKER' || msg.message_type === 'MEDIA' || msg.message_type === 'VIDEO_CIRCLE' ? "bg-transparent p-0" :
-            isMine
-              ? "btn-gradient rounded-2xl rounded-br-lg shadow-none text-white"
-              : "glass rounded-2xl rounded-bl-lg"
-          }`}>
-            {msg.reply_to && (
-              <div 
-                className={`mb-2 pl-3 py-1 border-l-2 text-xs opacity-80 cursor-pointer ${isMine ? 'border-white/50 text-white' : 'border-primary/50 text-foreground'}`}
-                onClick={() => {
-                  // Optional: scroll to message
-                  const el = document.getElementById(`msg-${msg.reply_to_id}`);
-                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  el?.classList.add('bg-primary/20');
-                  setTimeout(() => el?.classList.remove('bg-primary/20'), 1000);
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  {(msg.reply_to.message_type === 'MEDIA' && msg.reply_to.media_url && !msg.reply_to.media_url.startsWith('data:video') && !msg.reply_to.media_url.includes('.mp4') && !msg.reply_to.media_url.includes('.webm')) ? (
-                    <img
-                      src={msg.reply_to.media_url}
-                      alt="preview"
-                      className="w-7 h-7 rounded-lg object-cover shrink-0 border border-white/10"
-                    />
-                  ) : msg.reply_to.message_type === 'MEDIA' ? (
-                    <div className={`w-7 h-7 rounded-lg ${isMine ? 'bg-white/15' : 'bg-black/10 dark:bg-white/10'} flex items-center justify-center shrink-0`}>
-                      <VideoIcon className="w-3.5 h-3.5 opacity-80" />
-                    </div>
-                  ) : msg.reply_to.message_type === 'VOICE' ? (
-                    <div className={`w-7 h-7 rounded-lg ${isMine ? 'bg-white/15' : 'bg-black/10 dark:bg-white/10'} flex items-center justify-center shrink-0`}>
-                      <Mic className="w-3.5 h-3.5 opacity-80" />
-                    </div>
-                  ) : msg.reply_to.message_type === 'VIDEO_CIRCLE' ? (
-                    <div className={`w-7 h-7 rounded-lg ${isMine ? 'bg-white/15' : 'bg-black/10 dark:bg-white/10'} flex items-center justify-center shrink-0`}>
-                      <Camera className="w-3.5 h-3.5 opacity-80" />
-                    </div>
-                  ) : null}
-                  <div className="min-w-0">
-                    <p className="font-semibold truncate">{msg.reply_to.sender?.profile?.first_name || 'Пользователь'}</p>
-                    <p className="truncate opacity-75">
-                      {msg.reply_to.message_type === 'TEXT' ? msg.reply_to.content_text : 
-                       msg.reply_to.message_type === 'VOICE' ? 'Голосовое сообщение' :
-                       msg.reply_to.message_type === 'VIDEO_CIRCLE' ? 'Видеосообщение' :
-                       msg.reply_to.message_type === 'MEDIA' ? 'Медиа' :
-                       msg.reply_to.message_type === 'FILE' ? 'Файл' : 'Стикер'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            {msg.message_type === 'TEXT' && (
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content_text}</span>
-              </div>
-            )}
-            {msg.message_type === 'STICKER' && <img src={msg.media_url!} alt="sticker" className="w-24 h-24 object-contain drop-shadow-lg" />}
-            {msg.message_type === 'VOICE' && <VoiceMessage url={msg.media_url!} duration={msg.voice_duration!} />}
-            {msg.message_type === 'VIDEO_CIRCLE' && (
-              <VideoCircleMessage url={msg.media_url!} duration={msg.voice_duration!} />
-            )}
-            {msg.message_type === 'MEDIA' && (
-              msg.media_url?.startsWith('data:video') || msg.media_url?.includes('.mp4') || msg.media_url?.includes('.webm') ? (
-                <video src={msg.media_url} controls className="max-w-xs md:max-w-sm rounded-2xl max-h-60 object-contain bg-black/20" />
-              ) : (
-                <img 
-                  src={msg.media_url!} 
-                  alt="media" 
-                  className="max-w-xs md:max-w-sm rounded-2xl max-h-60 object-contain bg-black/20 cursor-pointer hover:opacity-90 transition-opacity" 
-                  onClick={() => setFullscreenImage(msg.media_url!)}
-                />
-              )
-            )}
-            {msg.message_type === 'FILE' && (
-              <a href={msg.media_url!} download={msg.content_text || 'file'} className="flex items-center gap-3 no-underline text-current">
-                <div className="w-10 h-10 rounded-xl bg-black/20 flex items-center justify-center shrink-0">
-                  <FileIcon className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate text-white">{msg.content_text || 'Вложенный файл'}</p>
-                  <p className="text-[10px] text-white/70">Нажмите, чтобы скачать</p>
-                </div>
-              </a>
-            )}
-
-            {!!(msg.reactions?.length) && (
-              <div className={`flex flex-wrap gap-1 mt-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                {Object.entries(
-                  (msg.reactions || []).reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
-                    const prev = acc[r.emoji] || { count: 0, mine: false };
-                    acc[r.emoji] = {
-                      count: prev.count + 1,
-                      mine: prev.mine || r.user_id === user?.id,
-                    };
-                    return acc;
-                  }, {})
-                ).map(([emoji, info]) => (
-                  <button
-                    key={emoji}
-                    onClick={() => toggleReaction(msg.id, emoji)}
-                    className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
-                      info.mine
-                        ? 'bg-primary/20 border-primary/40 text-primary'
-                        : 'bg-black/10 dark:bg-white/10 border-border/30 text-muted-foreground hover:text-foreground'
-                    }`}
-                    title="Переключить реакцию"
-                  >
-                    <span className="mr-1">{emoji}</span>
-                    {info.count}
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            <div className={`flex items-center gap-1 mt-1 justify-end ${
-              msg.message_type === 'STICKER' || msg.message_type === 'MEDIA' || msg.message_type === 'VIDEO_CIRCLE' 
-              ? 'absolute bottom-2 right-4 bg-black/50 px-1.5 py-0.5 rounded-full backdrop-blur-sm' 
-              : ''
-            }`}>
-              {msg.is_edited && (
-                <span className={`text-[10px] ${msg.message_type !== 'TEXT' ? 'text-white' : isMine ? 'text-white/70' : 'text-muted-foreground'} mr-1`}>
-                  изменено
-                </span>
-              )}
-              <span className={`text-[10px] ${msg.message_type !== 'TEXT' ? 'text-white' : isMine ? 'text-white/80' : 'text-muted-foreground'}`}>
-                {timeString}
-              </span>
-              {isMine && (
-                msg.is_read ? (
-                  <CheckCheck className={`w-3.5 h-3.5 ${msg.message_type !== 'TEXT' ? 'text-blue-400' : 'text-white'}`} />
-                ) : (
-                  <Check className={`w-3 h-3 ${msg.message_type !== 'TEXT' ? 'text-white' : 'text-white/80'}`} />
-                )
-              )}
-            </div>
-          </div>
-          
-          {/* Reply Icon when swiping */}
-          <div 
-            className="absolute top-1/2 -translate-y-1/2 -right-12 text-muted-foreground transition-opacity pointer-events-none"
-            style={{ opacity: Math.min(Math.abs(swipeOffset) / 40, 1) }}
-          >
-            <Reply className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const messagesWithDividers = useMemo(() => {
     const items: Array<
       | { kind: 'divider'; key: string; label: string }
@@ -1916,6 +1967,370 @@ export default function MessagesPage() {
     return items;
   }, [messages]);
 
+  const jumpToMessage = useCallback((messageId: string) => {
+    const index = messagesWithDividers.findIndex(m => m.key === messageId || (m.kind === 'msg' && m.msg.id === messageId));
+    if (index !== -1) {
+      virtuosoRef.current?.scrollToIndex({
+        index,
+        align: 'center',
+        behavior: 'smooth'
+      });
+      setTimeout(() => {
+        const el = document.getElementById(`msg-${messageId}`);
+        el?.classList.add('bg-primary/20');
+        setTimeout(() => el?.classList.remove('bg-primary/20'), 1000);
+      }, 500);
+    }
+  }, [messagesWithDividers]);
+
+  const handlePinnedTap = useCallback(() => {
+    if (!pinnedMessages.length) return;
+    const nextIndex = pinnedMessages.length > 1 ? (currentPinnedIndex + 1) % pinnedMessages.length : 0;
+    setCurrentPinnedIndex(nextIndex);
+    jumpToMessage(pinnedMessages[nextIndex].id);
+  }, [currentPinnedIndex, jumpToMessage, pinnedMessages]);
+
+  const unpinCurrentMessage = useCallback(async () => {
+    const current = pinnedMessages[currentPinnedIndex];
+    if (!current || !selectedUserId) return;
+    try {
+      await api.post(`/messages/${current.id}/pin`);
+      await fetchPinnedMessages(selectedUserId);
+      toast.success("Откреплено");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Не удалось открепить");
+    }
+  }, [currentPinnedIndex, pinnedMessages, selectedUserId]);
+
+  const unpinAllMessages = useCallback(async () => {
+    if (!selectedUserId || pinnedMessages.length === 0) return;
+    try {
+      await Promise.all(pinnedMessages.map((m) => api.post(`/messages/${m.id}/pin`)));
+      await fetchPinnedMessages(selectedUserId);
+      setPinnedListOpen(false);
+      toast.success("Все закрепы очищены");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Не удалось открепить все");
+    }
+  }, [pinnedMessages, selectedUserId]);
+
+  const PollItem = ({ msg }: { msg: ChatMessage }) => {
+    const poll = msg.poll;
+    if (!poll) return null;
+
+    const totalVotes = poll.votes?.length || 0;
+    const hasVoted = poll.votes?.some(v => v.user_id === user?.id);
+
+    const handleVote = async (optionId: number) => {
+      try {
+        await api.post(`/messages/polls/${poll.id}/vote`, { option_id: optionId });
+        fetchDialogs(); // To refresh message data
+        // Ideally, use socket to update poll state in real-time
+      } catch (err: any) {
+        toast.error(err?.response?.data?.error || "Не удалось проголосовать");
+      }
+    };
+
+    return (
+      <div className="flex flex-col gap-3 min-w-[240px] p-1">
+        <div className="flex flex-col gap-1">
+          <p className="font-bold text-sm">{poll.question}</p>
+          <p className="text-[10px] opacity-60 uppercase tracking-wider">
+            {poll.anonymous ? "Анонимный опрос" : "Публичный опрос"}
+            {poll.multiple && " · Выбор нескольких вариантов"}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2">
+          {poll.options.map(opt => {
+            const votesForOpt = poll.votes?.filter(v => v.option_id === opt.id).length || 0;
+            const percent = totalVotes > 0 ? Math.round((votesForOpt / totalVotes) * 100) : 0;
+            const isMyVote = poll.votes?.some(v => v.user_id === user?.id && v.option_id === opt.id);
+            
+            return (
+              <button 
+                key={opt.id}
+                onClick={() => handleVote(opt.id)}
+                className={`group relative flex flex-col gap-1 w-full text-left p-2 rounded-xl transition-all ${isMyVote ? 'bg-primary/10 border border-primary/20' : 'hover:bg-black/5 dark:hover:bg-white/5 border border-transparent'}`}
+              >
+                <div className="flex items-center justify-between gap-2 z-10">
+                  <span className="text-sm">{opt.text}</span>
+                  {hasVoted && <span className="text-xs font-bold opacity-70">{percent}%</span>}
+                </div>
+                {hasVoted && (
+                  <div className="absolute inset-0 rounded-xl bg-primary/10 transition-all z-0" style={{ width: `${percent}%` }} />
+                )}
+                {isMyVote && <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10"><Check className="w-3.5 h-3.5 text-primary" /></div>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between text-[10px] opacity-60">
+          <span>{totalVotes} {totalVotes === 1 ? 'голос' : totalVotes < 5 ? 'голоса' : 'голосов'}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const MessageItem = ({ msg, isMine }: { msg: ChatMessage, isMine: boolean }) => {
+    const [swipeOffset, setSwipeOffset] = useState(0);
+    const [showReactionPicker, setShowReactionPicker] = useState(false);
+    const itemRef = useRef<HTMLDivElement>(null);
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+      itemRef.current!.dataset.startX = e.touches[0].clientX.toString();
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+      const startX = parseFloat(itemRef.current!.dataset.startX || '0');
+      const currentX = e.touches[0].clientX;
+      const diff = currentX - startX;
+      
+      if (diff < 0 && diff > -60) {
+        setSwipeOffset(diff);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (swipeOffset < -40) {
+        setReplyingToMessage(msg);
+      }
+      setSwipeOffset(0);
+    };
+
+    const timeString = new Date(msg.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+
+    const renderTextWithEntities = (text: string) => {
+      if (!text) return null;
+      
+      const parts = text.split(/(@\w+|#\w+)/g);
+      return parts.map((part, i) => {
+        if (part.startsWith('@')) {
+          return (
+            <span key={i} className="text-primary font-medium hover:underline cursor-pointer">
+              {part}
+            </span>
+          );
+        }
+        if (part.startsWith('#')) {
+          return (
+            <span 
+              key={i} 
+              className="text-primary font-medium hover:underline cursor-pointer"
+              onClick={() => {
+                setChatSearchQuery(part);
+                setChatSearchOpen(true);
+                runServerSearch(null);
+              }}
+            >
+              {part}
+            </span>
+          );
+        }
+        return part;
+      });
+    };
+
+    const renderMessageContent = () => {
+      if (msg.message_type === 'TEXT') {
+        return (
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-[1.4]">
+              {renderTextWithEntities(msg.content_text || '')}
+            </div>
+            {msg.link_preview && (
+              <a 
+                href={msg.link_preview.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className={`mt-2 p-2 rounded-xl border flex flex-col gap-1 no-underline ${isMine ? 'bg-white/10 border-white/20' : 'bg-black/5 border-border/20'}`}
+              >
+                <span className="text-[11px] font-bold text-primary uppercase tracking-wider">{new URL(msg.link_preview.url).hostname}</span>
+                <span className="text-sm font-semibold line-clamp-1">{msg.link_preview.title}</span>
+                <span className="text-xs opacity-70 line-clamp-2">{msg.link_preview.description}</span>
+              </a>
+            )}
+          </div>
+        );
+      }
+      if (msg.message_type === 'VOICE') {
+        return <VoiceWaveform url={msg.media_url!} duration={msg.voice_duration!} isMine={isMine} />;
+      }
+      if (msg.message_type === 'MEDIA') {
+        if (msg.album_id) {
+          // Album will be rendered by the first message in album
+          return null; 
+        }
+        return (
+          msg.media_url?.startsWith('data:video') || msg.media_url?.includes('.mp4') || msg.media_url?.includes('.webm') ? (
+            <video src={msg.media_url} controls className="max-w-xs md:max-w-sm rounded-2xl max-h-[70vh] object-contain bg-black/20" />
+          ) : (
+            <img 
+              src={msg.media_url!} 
+              alt="media" 
+              className="max-w-xs md:max-w-sm rounded-2xl max-h-[70vh] object-contain bg-black/20 cursor-pointer hover:opacity-95 transition-opacity" 
+              onClick={() => setFullscreenImage(msg.media_url!)}
+            />
+          )
+        );
+      }
+      if (msg.message_type === 'FILE') {
+        return (
+          <a href={msg.media_url!} download={msg.content_text || 'file'} className="flex items-center gap-3 no-underline text-current p-1">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${isMine ? 'bg-white/20' : 'bg-primary/10 dark:bg-primary/20'}`}>
+              <FileIcon className={`w-5 h-5 ${isMine ? 'text-white' : 'text-primary'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{msg.content_text || 'Вложенный файл'}</p>
+              <p className={`text-[10px] ${isMine ? 'text-white/70' : 'text-muted-foreground'}`}>Нажмите, чтобы скачать</p>
+            </div>
+          </a>
+        );
+      }
+      if (msg.message_type === 'STICKER') {
+        return <img src={msg.media_url!} alt="sticker" className="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-lg" />;
+      }
+      if (msg.message_type === 'POLL') {
+        return <PollItem msg={msg} />;
+      }
+      return null;
+    };
+
+    const albumMessages = msg.album_id ? messages.filter(m => m.album_id === msg.album_id) : [];
+    const isFirstInAlbum = msg.album_id && albumMessages[0]?.id === msg.id;
+
+    if (msg.album_id && !isFirstInAlbum) return null;
+
+    return (
+      <div 
+        ref={itemRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className={`flex ${isMine ? "justify-end" : "justify-start"} relative mb-1`}
+      >
+        <div 
+          className="relative group max-w-[88vw] sm:max-w-[75%] min-w-0 transition-transform duration-200 ease-out"
+          style={{ transform: `translateX(${swipeOffset}px)` }}
+        >
+          <MessageActions msg={msg} isMine={isMine} />
+          <div 
+            className={`tg-bubble ${
+              msg.message_type === 'STICKER' || (msg.message_type === 'MEDIA' && !msg.album_id) || msg.message_type === 'VIDEO_CIRCLE' ? "bg-transparent p-0 shadow-none" :
+              isMine ? "tg-bubble-out" : "tg-bubble-in"
+            }`}
+            style={{ 
+              backgroundColor: isMine && chatConfig?.bubble_color ? chatConfig.bubble_color : undefined,
+              color: isMine && chatConfig?.bubble_color ? '#fff' : undefined 
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setShowReactionPicker(true);
+            }}
+          >
+            {(msg.message_type === 'TEXT' || msg.message_type === 'FILE' || msg.message_type === 'VOICE') && (
+              <div className="tg-bubble-tail" />
+            )}
+            
+            <AnimatePresence>
+              {showReactionPicker && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                  className={`absolute bottom-full mb-2 p-1 glass rounded-full shadow-xl flex gap-1 z-[100] ${isMine ? 'right-0' : 'left-0'}`}
+                >
+                  {EMOJI_LIST.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        toggleReaction(msg.id, emoji);
+                        setShowReactionPicker(false);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center hover:bg-black/10 rounded-full transition-transform hover:scale-125 active:scale-90"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {msg.reply_to && (
+              <div 
+                className={`mb-2 pl-3 py-1 border-l-2 text-xs opacity-80 cursor-pointer ${isMine ? 'border-white/50 text-white' : 'border-primary/50 text-foreground'}`}
+                onClick={() => jumpToMessage(msg.reply_to_id!)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{msg.reply_to.sender?.profile?.first_name || 'Пользователь'}</p>
+                    <p className="truncate opacity-75">
+                      {msg.reply_to.message_type === 'TEXT' ? msg.reply_to.content_text : 
+                       msg.reply_to.message_type === 'VOICE' ? 'Голосовое сообщение' :
+                       msg.reply_to.message_type === 'MEDIA' ? 'Медиа' : 'Файл'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isFirstInAlbum ? <PhotoGallery messages={albumMessages} /> : renderMessageContent()}
+
+            {!!(msg.reactions?.length) && (
+              <div className={`flex flex-wrap gap-1 mt-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                {Object.entries(
+                  (msg.reactions || []).reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
+                    const prev = acc[r.emoji] || { count: 0, mine: false };
+                    acc[r.emoji] = {
+                      count: prev.count + 1,
+                      mine: prev.mine || r.user_id === user?.id,
+                    };
+                    return acc;
+                  }, {})
+                ).map(([emoji, info]) => (
+                  <button
+                    key={emoji}
+                    onClick={() => toggleReaction(msg.id, emoji)}
+                    className={`px-2 py-1 rounded-full text-[11px] font-semibold border transition-all ${
+                      info.mine
+                        ? 'bg-primary/20 border-primary/40 text-primary'
+                        : 'bg-black/10 dark:bg-white/10 border-border/30 text-muted-foreground hover:bg-black/20'
+                    }`}
+                  >
+                    <span className="mr-1">{emoji}</span>
+                    {info.count}
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            <div className={`flex items-center gap-1 mt-1 justify-end ${
+              msg.message_type === 'STICKER' || (msg.message_type === 'MEDIA' && !msg.album_id) || msg.message_type === 'VIDEO_CIRCLE' 
+              ? 'absolute bottom-2 right-4 bg-black/40 px-1.5 py-0.5 rounded-full backdrop-blur-md border border-white/10' 
+              : ''
+            }`}>
+              {msg.is_edited && <span className="text-[10px] opacity-60 mr-0.5">изм.</span>}
+              <span className="text-[10px] font-medium opacity-80">{timeString}</span>
+              {isMine && (
+                msg.is_read ? (
+                  <CheckCheck className={`w-3.5 h-3.5 ${msg.message_type !== 'TEXT' ? 'text-blue-300' : 'text-white'}`} />
+                ) : (
+                  <Check className={`w-3 h-3 ${msg.message_type !== 'TEXT' ? 'text-white' : 'text-white/80'}`} />
+                )
+              )}
+            </div>
+          </div>
+          
+          <div 
+            className="absolute top-1/2 -translate-y-1/2 -right-12 text-muted-foreground transition-opacity pointer-events-none"
+            style={{ opacity: Math.min(Math.abs(swipeOffset) / 40, 1) }}
+          >
+            <Reply className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <AppLayout>
       <h2 className="mb-3 text-xl font-bold sm:mb-6 sm:text-2xl">Сообщения</h2>
@@ -1938,14 +2353,49 @@ export default function MessagesPage() {
               <Search className="w-4 h-4 absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             </div>
             
-            <div className="flex-1 overflow-y-auto hide-scrollbar">
+            <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col">
+              {/* Folder Tabs */}
+              <div className="p-2 border-b border-border/10 flex gap-2 overflow-x-auto hide-scrollbar bg-background/50 sticky top-0 z-20">
+                <button 
+                  onClick={() => setActiveFolderId("all")}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all ${activeFolderId === "all" ? "bg-primary text-white shadow-md shadow-primary/20" : "bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10"}`}
+                >
+                  Все
+                </button>
+                {folders.map(f => (
+                  <button 
+                    key={f.id}
+                    onClick={() => setActiveFolderId(f.id)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${activeFolderId === f.id ? "bg-primary text-white shadow-md shadow-primary/20" : "bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10"}`}
+                  >
+                    {f.icon && <span>{f.icon}</span>}
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+
               {loading ? (
                 <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
               ) : (() => {
                 const saved = dialogs.find(d => d.isSaved) || null;
                 const archived = dialogs.filter(d => !d.isSaved && d.archived);
                 const normal = dialogs.filter(d => !d.isSaved && !d.archived);
-                const list = archiveOpen ? archived : normal;
+                
+                let list = activeFolderId === "archived" ? archived : normal;
+                
+                if (activeFolderId !== "all" && activeFolderId !== "archived") {
+                  const folder = folders.find(f => f.id === activeFolderId);
+                  if (folder) {
+                    list = list.filter(d => {
+                      const f = folder.filters;
+                      if (f.includeIds.includes(d.userId)) return true;
+                      if (f.excludeIds.includes(d.userId)) return false;
+                      if (f.types.includes("UNREAD") && d.unreadCount > 0) return true;
+                      if (f.types.includes("PRIVATE") && !d.userId.includes("group")) return true;
+                      return false;
+                    });
+                  }
+                }
 
                 const filtered = list.filter(d =>
                   d.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1953,15 +2403,11 @@ export default function MessagesPage() {
                 );
 
                 const archiveCount = archived.length;
-                const showArchiveRow = true;
-
-                if (!saved && filtered.length === 0 && !showArchiveRow) {
-                  return <div className="text-center py-16 text-muted-foreground text-xs">Нет диалогов</div>;
-                }
+                const showArchiveRow = activeFolderId === "all";
 
                 return (
                   <div className="divide-y divide-border/20">
-                    {saved && !archiveOpen && (
+                    {saved && activeFolderId === "all" && (
                       <button
                         key="saved-messages"
                         onClick={() => openChat(saved.userId, saved.first_name, saved.avatar_url)}
@@ -1988,13 +2434,11 @@ export default function MessagesPage() {
                       </button>
                     )}
 
-                    {showArchiveRow && (
+                    {showArchiveRow && archiveCount > 0 && (
                       <button
                         key="archive-folder"
-                        onClick={() => setArchiveOpen(v => !v)}
-                        className={`w-full flex items-center gap-3 p-3.5 text-left transition-all ${
-                          archiveOpen ? "bg-accent" : "hover:bg-accent/30"
-                        }`}
+                        onClick={() => setActiveFolderId("archived")}
+                        className={`w-full flex items-center gap-3 p-3.5 text-left transition-all hover:bg-accent/30`}
                       >
                         <div className="w-10 h-10 rounded-2xl glass-subtle flex items-center justify-center shrink-0">
                           <Archive className="w-5 h-5 text-muted-foreground" />
@@ -2002,83 +2446,90 @@ export default function MessagesPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold truncate">Архив</p>
-                            <span className="text-[10px] text-muted-foreground">{archiveOpen ? "Открыт" : ""}</span>
                           </div>
                           <p className="text-[11px] text-muted-foreground truncate">
                             {archiveCount} {archiveCount === 1 ? "чат" : archiveCount < 5 ? "чата" : "чатов"}
                           </p>
                         </div>
-                        <span className="shrink-0 text-muted-foreground">
-                          {archiveOpen ? <ArchiveX className="w-4 h-4" /> : null}
-                        </span>
                       </button>
                     )}
 
                     {filtered.length === 0 ? (
                       <div className="text-center py-16 text-muted-foreground text-xs">
-                        {archiveOpen ? "Архив пуст" : "Нет диалогов"}
+                        {activeFolderId === "archived" ? "Архив пуст" : "Нет диалогов"}
                       </div>
                     ) : (
-                      filtered.map(dialog => (
-                        <button
-                          key={dialog.userId}
-                          onClick={() => openChat(dialog.userId, dialog.first_name, dialog.avatar_url)}
-                          onPointerEnter={() => prefetchChatForUser(dialog.userId)}
-                          onTouchStart={() => prefetchChatForUser(dialog.userId)}
-                          className={`w-full flex items-center gap-3 p-3.5 text-left transition-all group ${
-                            selectedUserId === dialog.userId ? "bg-accent" : "hover:bg-accent/30"
-                          }`}
-                        >
-                          {dialog.avatar_url ? (
-                            <img src={dialog.avatar_url} alt={dialog.first_name} className="w-10 h-10 rounded-2xl object-cover shrink-0" />
-                          ) : (
-                            <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm shrink-0">
-                              {dialog.first_name.charAt(0)}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-semibold truncate">{dialog.first_name}</p>
-                              <span className="text-[10px] text-muted-foreground">{dialog.time}</span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground truncate">{dialog.lastMessage}</p>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            {dialog.muted && (
-                              <span className="shrink-0 text-muted-foreground" title="Чат заглушен">
-                                <BellOff className="w-4 h-4" />
-                              </span>
+                      filtered.map(dialog => {
+                        const draft = drafts[dialog.userId];
+                        return (
+                          <button
+                            key={dialog.userId}
+                            onClick={() => openChat(dialog.userId, dialog.first_name, dialog.avatar_url)}
+                            onPointerEnter={() => prefetchChatForUser(dialog.userId)}
+                            onTouchStart={() => prefetchChatForUser(dialog.userId)}
+                            className={`w-full flex items-center gap-3 p-3.5 text-left transition-all group relative ${
+                              selectedUserId === dialog.userId ? "bg-accent" : "hover:bg-accent/30"
+                            }`}
+                          >
+                            {dialog.avatar_url ? (
+                              <img src={dialog.avatar_url} alt={dialog.first_name} className="w-10 h-10 rounded-2xl object-cover shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-2xl bg-gradient-subtle flex items-center justify-center text-gradient font-bold text-sm shrink-0">
+                                {dialog.first_name.charAt(0)}
+                              </div>
                             )}
-
-                            <div
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDialogArchive(dialog.userId, !Boolean(dialog.archived));
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key !== "Enter" && e.key !== " ") return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDialogArchive(dialog.userId, !Boolean(dialog.archived));
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-xl hover:bg-white/5 text-muted-foreground cursor-pointer"
-                              title={dialog.archived ? "Вернуть из архива" : "В архив"}
-                            >
-                              {dialog.archived ? <ArchiveX className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-semibold truncate">{dialog.first_name}</p>
+                                <span className="text-[10px] text-muted-foreground">{dialog.time}</span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {draft ? (
+                                  <span className="text-primary italic flex items-center gap-1">
+                                    <Edit2 className="w-3 h-3" /> Черновик: {draft.content_text}
+                                  </span>
+                                ) : (
+                                  dialog.lastMessage
+                                )}
+                              </p>
                             </div>
 
-                            {dialog.unreadCount > 0 && (
-                              <span className="w-5 h-5 rounded-full btn-gradient text-[10px] flex items-center justify-center font-bold">
-                                {dialog.unreadCount}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      ))
+                            <div className="flex items-center gap-2 shrink-0">
+                              {dialog.muted && (
+                                <span className="shrink-0 text-muted-foreground" title="Чат заглушен">
+                                  <BellOff className="w-4 h-4" />
+                                </span>
+                              )}
+
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setDialogArchive(dialog.userId, !Boolean(dialog.archived));
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter" && e.key !== " ") return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setDialogArchive(dialog.userId, !Boolean(dialog.archived));
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-xl hover:bg-white/5 text-muted-foreground cursor-pointer"
+                                title={dialog.archived ? "Вернуть из архива" : "В архив"}
+                              >
+                                {dialog.archived ? <ArchiveX className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                              </div>
+
+                              {dialog.unreadCount > 0 && (
+                                <span className="w-5 h-5 rounded-full btn-gradient text-[10px] flex items-center justify-center font-bold">
+                                  {dialog.unreadCount}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 );
@@ -2232,6 +2683,17 @@ export default function MessagesPage() {
                             </div>
                           )}
                         </div>
+                        <button
+                          onClick={() => {
+                            const color = prompt("Введите HEX цвет пузыря (например #7c3aed):", chatConfig?.bubble_color || "#7c3aed");
+                            if (color) updateChatConfig({ bubble_color: color });
+                            setChatActionsOpen(false);
+                          }}
+                          className="p-2 rounded-xl text-muted-foreground hover:bg-white/5 hover:text-primary transition-colors"
+                          title="Цвет пузырей"
+                        >
+                          <Smile className="w-5 h-5" style={{ color: chatConfig?.bubble_color }} />
+                        </button>
                         <button 
                           onClick={() => {
                             setDeleteConfirmation({ id: selectedUserId, type: 'CHAT' });
@@ -2396,51 +2858,50 @@ export default function MessagesPage() {
                 )}
 
                 <div
-                  ref={scrollContainerRef}
-                  className="flex-1 overflow-y-auto p-2.5 sm:p-4 space-y-2 hide-scrollbar relative flex flex-col"
-                  onScroll={() => {
-                    const scroller = scrollContainerRef.current;
-                    if (!scroller) return;
-                    if (scroller.scrollTop <= 40) {
-                      loadOlder();
-                    }
-                  }}
+                  className="flex-1 relative tg-chat-bg overflow-hidden"
                 >
-                  {/* Messages container that pushes content to bottom if it's short */}
-                  <div className="flex-1 min-h-min flex flex-col justify-end">
-                    {nextCursor && (
-                      <div className="flex justify-center pb-2">
-                        <button
-                          onClick={loadOlder}
-                          disabled={loadingMore}
-                          className="px-4 py-1.5 rounded-full glass text-[11px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-60"
-                        >
-                          {loadingMore ? "Загрузка..." : "Загрузить ещё"}
-                        </button>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      {messagesWithDividers.map(item => {
-                        if (item.kind === 'divider') {
-                          return (
-                            <div key={item.key} className="flex justify-center py-2">
-                              <span className="px-3 py-1 rounded-full text-[10px] font-semibold glass-subtle text-muted-foreground border border-border/20">
-                                {item.label}
-                              </span>
-                            </div>
-                          );
-                        }
-                        const msg = item.msg;
-                        const isMine = msg.sender_id === user?.id;
+                  <Virtuoso
+                    ref={virtuosoRef}
+                    data={messagesWithDividers}
+                    followOutput="auto"
+                    initialTopMostItemIndex={messagesWithDividers.length - 1}
+                    className="hide-scrollbar"
+                    style={{ height: '100%' }}
+                    components={{
+                      Header: () => (
+                        nextCursor ? (
+                          <div className="flex justify-center py-4">
+                            <button
+                              onClick={loadOlder}
+                              disabled={loadingMore}
+                              className="px-4 py-1.5 rounded-full glass text-[11px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-60"
+                            >
+                              {loadingMore ? "Загрузка..." : "Загрузить ещё"}
+                            </button>
+                          </div>
+                        ) : null
+                      ),
+                      Footer: () => <div className="h-4" />
+                    }}
+                    itemContent={(index, item) => {
+                      if (item.kind === 'divider') {
                         return (
-                          <div key={item.key} id={`msg-${msg.id}`}>
-                            <MessageItem msg={msg} isMine={isMine} />
+                          <div key={item.key} className="flex justify-center py-4">
+                            <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider glass-subtle text-muted-foreground border border-border/20 shadow-sm backdrop-blur-md">
+                              {item.label}
+                            </span>
                           </div>
                         );
-                      })}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </div>
+                      }
+                      const msg = item.msg;
+                      const isMine = msg.sender_id === user?.id;
+                      return (
+                        <div key={item.key} id={`msg-${msg.id}`} className="px-2.5 sm:px-4 py-0.5">
+                          <MessageItem msg={msg} isMine={isMine} />
+                        </div>
+                      );
+                    }}
+                  />
                 </div>
 
                 {/* Jump to date */}
@@ -2527,6 +2988,108 @@ export default function MessagesPage() {
                   </DialogContent>
                 </UIDialog>
 
+                {/* Poll Creator */}
+                <UIDialog open={showPollCreator} onOpenChange={setShowPollCreator}>
+                  <DialogContent className="sm:max-w-md p-0 overflow-hidden border-border/30 glass-subtle">
+                    <DialogTitle className="p-4 pb-2 text-base font-bold">Создание опроса</DialogTitle>
+                    <div className="px-4 pb-4 flex flex-col gap-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Вопрос</label>
+                        <input
+                          type="text"
+                          value={pollQuestion}
+                          onChange={(e) => setPollQuestion(e.target.value)}
+                          placeholder="Задайте вопрос"
+                          className="w-full px-4 py-3 rounded-2xl glass text-sm focus:ring-2 focus:ring-primary/50"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Варианты ответа</label>
+                        {pollOptions.map((opt, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => {
+                                const next = [...pollOptions];
+                                next[idx] = e.target.value;
+                                setPollOptions(next);
+                              }}
+                              placeholder={`Вариант ${idx + 1}`}
+                              className="flex-1 px-4 py-3 rounded-2xl glass text-sm focus:ring-2 focus:ring-primary/50"
+                            />
+                            {pollOptions.length > 2 && (
+                              <button 
+                                onClick={() => setPollOptions(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-2 text-muted-foreground hover:text-red-500 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {pollOptions.length < 10 && (
+                          <button 
+                            onClick={() => setPollOptions(prev => [...prev, ""])}
+                            className="text-primary text-xs font-bold hover:underline self-start ml-1 mt-1"
+                          >
+                            + Добавить вариант
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2 border-t border-border/10 pt-4 mt-2">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            checked={pollAnonymous} 
+                            onChange={(e) => setPollAnonymous(e.target.checked)}
+                            className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm group-hover:text-primary transition-colors">Анонимное голосование</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input 
+                            type="checkbox" 
+                            checked={pollMultiple} 
+                            onChange={(e) => setPollMultiple(e.target.checked)}
+                            className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="text-sm group-hover:text-primary transition-colors">Выбор нескольких вариантов</span>
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          onClick={() => setShowPollCreator(false)}
+                          className="flex-1 px-4 py-3 rounded-2xl glass text-sm font-bold hover:bg-white/5 transition-colors"
+                        >
+                          Отмена
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const options = pollOptions.filter(o => o.trim()).map((o, i) => ({ id: i + 1, text: o.trim() }));
+                            if (!pollQuestion.trim() || options.length < 2) {
+                              toast.error("Введите вопрос и как минимум 2 варианта ответа");
+                              return;
+                            }
+                            await sendMessage('POLL', pollQuestion, null, null, {
+                              question: pollQuestion,
+                              options,
+                              multiple: pollMultiple,
+                              anonymous: pollAnonymous
+                            });
+                            setShowPollCreator(false);
+                            setPollQuestion("");
+                            setPollOptions(["", ""]);
+                          }}
+                          className="flex-1 px-4 py-3 rounded-2xl btn-gradient text-sm font-bold shadow-lg shadow-primary/20"
+                        >
+                          Создать
+                        </button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </UIDialog>
+
                 {/* Forward Picker */}
                 <UIDialog open={forwardPickerOpen} onOpenChange={(open) => !open && setForwardPickerOpen(false)}>
                   <DialogContent className="sm:max-w-md p-0 overflow-hidden border-border/30 glass-subtle">
@@ -2586,32 +3149,84 @@ export default function MessagesPage() {
                   </div>
                 )}
 
-                <div className="p-2 sm:p-3 border-t border-border/30 relative shrink-0 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+                <div className="p-2 sm:p-4 border-t border-border/20 relative shrink-0 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-background/50 backdrop-blur-xl">
+                  {/* Attachments Menu */}
+                  {showAttachments && (
+                    <div className="absolute bottom-full mb-4 left-4 p-2 glass rounded-[24px] border border-border/30 shadow-2xl flex flex-col gap-1 z-[60] w-56 animate-in slide-in-from-bottom-4 duration-200">
+                      <button 
+                        onClick={() => {
+                          mediaInputRef.current?.click();
+                          setShowAttachments(false);
+                        }}
+                        className="flex items-center gap-3 p-3 hover:bg-white/10 rounded-2xl transition-colors text-sm font-medium"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                          <ImageIcon className="w-4 h-4 text-blue-500" />
+                        </div>
+                        Фото или видео
+                      </button>
+                      <button 
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                          setShowAttachments(false);
+                        }}
+                        className="flex items-center gap-3 p-3 hover:bg-white/10 rounded-2xl transition-colors text-sm font-medium"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
+                          <FileIcon className="w-4 h-4 text-purple-500" />
+                        </div>
+                        Файл
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setShowPollCreator(true);
+                          setShowAttachments(false);
+                        }}
+                        className="flex items-center gap-3 p-3 hover:bg-white/10 rounded-2xl transition-colors text-sm font-medium"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
+                          <MoreHorizontal className="w-4 h-4 text-orange-500" />
+                        </div>
+                        Опрос
+                      </button>
+                    </div>
+                  )}
+                  
+                  {showStickers && (
+                    <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 sm:left-14 sm:translate-x-0 w-[min(92vw,18rem)] p-3 glass rounded-[24px] border border-border/30 shadow-2xl z-[60] animate-in slide-in-from-bottom-4 duration-200">
+                      <div className="flex gap-2 mb-3 overflow-x-auto hide-scrollbar pb-2 border-b border-border/10">
+                        {stickerPacks.map(pack => (
+                          <button 
+                            key={pack.id}
+                            onClick={() => setActivePackId(pack.id)}
+                            className={`shrink-0 w-10 h-10 rounded-xl overflow-hidden border-2 transition-all ${activePackId === pack.id ? 'border-primary' : 'border-transparent opacity-60'}`}
+                          >
+                            <img src={pack.thumbnail || pack.stickers?.[0]?.media_url} alt={pack.title} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto hide-scrollbar p-1">
+                        {activeStickers.map((sticker: any) => (
+                          <button
+                            key={sticker.id}
+                            onClick={() => {
+                              sendMessage('STICKER', null, sticker.media_url);
+                              setShowStickers(false);
+                            }}
+                            className="aspect-square rounded-xl hover:bg-white/10 transition-all p-1 hover:scale-110 active:scale-95"
+                          >
+                            <img src={sticker.media_url} alt="sticker" className="w-full h-full object-contain" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {replyingToMessage && (
-                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/30 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-3 sm:px-6 animate-in slide-in-from-bottom-2 z-20">
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <Reply className="w-5 h-5 text-primary shrink-0" />
-                        {(replyingToMessage.message_type === 'MEDIA' && replyingToMessage.media_url && !replyingToMessage.media_url.startsWith('data:video') && !replyingToMessage.media_url.includes('.mp4') && !replyingToMessage.media_url.includes('.webm')) ? (
-                          <img
-                            src={replyingToMessage.media_url}
-                            alt="preview"
-                            className="w-9 h-9 rounded-xl object-cover shrink-0 border border-border/20"
-                          />
-                        ) : replyingToMessage.message_type === 'MEDIA' ? (
-                          <div className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center shrink-0">
-                            <VideoIcon className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                        ) : replyingToMessage.message_type === 'VOICE' ? (
-                          <div className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center shrink-0">
-                            <Mic className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                        ) : replyingToMessage.message_type === 'VIDEO_CIRCLE' ? (
-                          <div className="w-9 h-9 rounded-xl bg-black/10 dark:bg-white/10 flex items-center justify-center shrink-0">
-                            <Camera className="w-4 h-4 text-muted-foreground" />
-                          </div>
-                        ) : null}
+                    <div className="absolute bottom-full left-0 right-0 p-3 bg-background/80 backdrop-blur-xl border-t border-border/20 flex items-center justify-between px-4 sm:px-8 animate-in slide-in-from-bottom-2 z-20">
+                      <div className="flex items-center gap-3 overflow-hidden border-l-2 border-primary pl-3">
                         <div className="flex flex-col overflow-hidden">
-                          <span className="text-primary text-[11px] font-semibold">
+                          <span className="text-primary text-[11px] font-bold uppercase tracking-wider">
                             В ответ {replyingToMessage.sender_id === user?.id ? "Вам" : selectedName}
                           </span>
                           <span className="text-xs text-muted-foreground truncate max-w-[200px] md:max-w-[400px]">
@@ -2632,141 +3247,108 @@ export default function MessagesPage() {
                     </div>
                   )}
                   {editingMessageId && (
-                    <div className="absolute bottom-full left-0 right-0 p-2.5 bg-accent/50 backdrop-blur-md border-t border-border/30 flex items-center justify-between px-3 sm:px-6 animate-in slide-in-from-bottom-2 z-20">
-                      <div className="flex items-center gap-2 text-primary text-[11px] font-semibold uppercase tracking-wider">
-                        <Edit2 className="w-3 h-3" />
-                        <span>Редактирование</span>
+                    <div className="absolute bottom-full left-0 right-0 p-3 bg-background/80 backdrop-blur-xl border-t border-border/20 flex items-center justify-between px-4 sm:px-8 animate-in slide-in-from-bottom-2 z-20">
+                      <div className="flex items-center gap-3 text-primary border-l-2 border-primary pl-3">
+                        <div className="flex flex-col">
+                          <span className="text-primary text-[11px] font-bold uppercase tracking-wider">Редактирование</span>
+                          <span className="text-xs text-muted-foreground truncate max-w-[200px] md:max-w-[400px]">
+                            {messages.find(m => m.id === editingMessageId)?.content_text}
+                          </span>
+                        </div>
                       </div>
                       <button 
                         onClick={() => {
                           setEditingMessageId(null);
                           setMessageText("");
                         }} 
-                        className="p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors"
+                        className="p-1.5 hover:bg-black/10 dark:hover:bg-white/10 rounded-full transition-colors"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                  {/* Attachments Menu */}
-                  {showAttachments && (
-                    <div className="absolute bottom-full mb-2 left-3 p-2 glass rounded-2xl border border-border/30 shadow-xl flex flex-col gap-1 z-10 w-48">
-                      <button 
-                        onClick={() => mediaInputRef.current?.click()}
-                        className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-xl transition-colors text-sm"
-                      >
-                        <ImageIcon className="w-4 h-4 text-blue-400" />
-                        Фото или видео
-                      </button>
-                      <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-xl transition-colors text-sm"
-                      >
-                        <FileIcon className="w-4 h-4 text-purple-400" />
-                        Файл
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
                   )}
                   
-                  {showStickers && (
-                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 sm:left-14 sm:translate-x-0 w-[min(92vw,16rem)] p-3 glass rounded-2xl border border-border/30 shadow-xl grid grid-cols-4 gap-2 z-10">
-                      {MOCK_STICKERS.map((sticker, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => sendMessage('STICKER', null, sticker)}
-                          className="p-1 hover:bg-white/10 rounded-xl transition-colors"
-                        >
-                          <img src={sticker} alt="sticker" className="w-full h-auto object-contain" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <button
-                      onClick={() => {
-                        setShowAttachments(!showAttachments);
-                        setShowStickers(false);
-                      }}
-                      className={`p-2 rounded-xl transition-colors ${showAttachments ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5'}`}
-                    >
-                      <Paperclip className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowStickers(!showStickers);
-                        setShowAttachments(false);
-                      }}
-                      className={`p-2 rounded-xl transition-colors ${showStickers ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5'}`}
-                    >
-                      <Smile className="w-5 h-5" />
-                    </button>
-                    
-                    {/* Hidden Inputs */}
-                    <input 
-                      type="file" 
-                      ref={mediaInputRef} 
-                      className="hidden" 
-                      accept="image/*,video/*" 
-                      onChange={(e) => handleFileUpload(e, 'MEDIA')} 
-                    />
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      accept="*" 
-                      onChange={(e) => handleFileUpload(e, 'FILE')} 
-                    />
-                    
-                    {isRecording ? (
-                      <div className="flex-1 px-3 sm:px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-red-500 animate-pulse">
-                          <div className="w-2 h-2 rounded-full bg-red-500" />
-                          <span className="text-sm font-medium">Запись: {formatDuration(recordingDuration)}</span>
-                        </div>
-                        <button onClick={stopRecording} className="text-muted-foreground hover:text-foreground">
-                          <Square className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : isVideoRecording ? (
-                      <div className="flex-1 px-3 sm:px-4 py-3 rounded-2xl glass-subtle flex items-center justify-between relative overflow-hidden">
-                        <div className="absolute inset-0 bg-red-500/10 animate-pulse pointer-events-none" />
-                        <div className="flex items-center gap-2 text-red-500 z-10">
-                          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                          <span className="text-sm font-medium">Запись видео: {formatDuration(videoRecordingDuration)}</span>
-                        </div>
-                        <button onClick={stopVideoRecording} className="text-muted-foreground hover:text-foreground z-10">
-                          <Square className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={messageText}
-                        onChange={(e) => handleTypingChanged(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && sendMessage('TEXT')}
-                        placeholder="Написать сообщение..."
-                        className="flex-1 min-w-0 px-3 sm:px-4 py-3 rounded-2xl glass-subtle text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/50"
-                      />
-                    )}
-
-                    {messageText.trim() ? (
+                  <div className="flex items-end gap-2 max-w-5xl mx-auto">
+                    <div className="flex-1 flex items-end gap-2 bg-accent/30 dark:bg-white/5 rounded-[24px] px-3 py-1.5 min-h-[48px] border border-border/10">
                       <button
-                        onClick={() => sendMessage('TEXT')}
-                        className="p-3 rounded-2xl btn-gradient"
+                        onClick={() => {
+                          setShowAttachments(!showAttachments);
+                          setShowStickers(false);
+                        }}
+                        className={`p-2 rounded-full transition-colors shrink-0 ${showAttachments ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}
                       >
-                        {editingMessageId ? <Check className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                        <Paperclip className="w-5 h-5" />
                       </button>
-                    ) : (
-                      <div className="relative group">
+                      
+                      <div className="flex-1 flex flex-col min-w-0 py-1.5">
+                        {isRecording ? (
+                          <div className="flex items-center justify-between px-1">
+                            <div className="flex items-center gap-2 text-red-500 animate-pulse">
+                              <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                              <span className="text-sm font-semibold">Запись: {formatDuration(recordingDuration)}</span>
+                            </div>
+                            <button onClick={stopRecording} className="text-muted-foreground hover:text-foreground p-1">
+                              <Square className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : isVideoRecording ? (
+                          <div className="flex items-center justify-between px-1 relative overflow-hidden">
+                            <div className="flex items-center gap-2 text-red-500 z-10">
+                              <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                              <span className="text-sm font-semibold">Видео: {formatDuration(videoRecordingDuration)}</span>
+                            </div>
+                            <button onClick={stopVideoRecording} className="text-muted-foreground hover:text-foreground z-10 p-1">
+                              <Square className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <textarea
+                            rows={1}
+                            value={messageText}
+                            onChange={(e) => {
+                              handleTypingChanged(e.target.value);
+                              e.target.style.height = 'auto';
+                              e.target.style.height = e.target.scrollHeight + 'px';
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                sendMessage('TEXT');
+                              }
+                            }}
+                            placeholder="Сообщение"
+                            className="w-full bg-transparent border-none focus:ring-0 text-sm py-1 max-h-48 overflow-y-auto resize-none hide-scrollbar placeholder:text-muted-foreground/60"
+                            style={{ height: '24px' }}
+                          />
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setShowStickers(!showStickers);
+                          setShowAttachments(false);
+                        }}
+                        className={`p-2 rounded-full transition-colors shrink-0 ${showStickers ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}
+                      >
+                        <Smile className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="flex-shrink-0 mb-0.5">
+                      {messageText.trim() ? (
+                        <button
+                          onClick={() => sendMessage('TEXT')}
+                          className="w-11 h-11 rounded-full btn-gradient flex items-center justify-center shadow-md shadow-primary/30 hover:scale-105 active:scale-95 transition-all"
+                        >
+                          {editingMessageId ? <Check className="w-5 h-5" /> : <Send className="w-5 h-5 ml-0.5" />}
+                        </button>
+                      ) : (
                         <button
                           onPointerDown={(e) => {
-                            if (e.button !== 0 && e.button !== -1) return; // Only left click or touch
+                            if (e.button !== 0 && e.button !== -1) return;
                             e.preventDefault();
                             e.currentTarget.setPointerCapture(e.pointerId);
-                            // Store the time we started pressing
                             e.currentTarget.dataset.pressStartTime = Date.now().toString();
-                            
-                            // Set a small timeout so a quick tap doesn't start recording
                             timerRef.current = setTimeout(() => {
                               if (recordMode === 'VOICE') startRecording();
                               else startVideoRecording();
@@ -2777,42 +3359,22 @@ export default function MessagesPage() {
                             if (e.currentTarget.hasPointerCapture(e.pointerId)) {
                               e.currentTarget.releasePointerCapture(e.pointerId);
                             }
-                            if (timerRef.current) {
-                              clearTimeout(timerRef.current);
-                            }
-                            
+                            if (timerRef.current) clearTimeout(timerRef.current);
                             const pressStartTime = parseInt(e.currentTarget.dataset.pressStartTime || '0');
                             const pressDuration = Date.now() - pressStartTime;
-                            
                             if (isPressingRef.current) {
-                              // It was a long press (recording)
                               if (recordMode === 'VOICE') stopRecording();
                               else stopVideoRecording();
                             } else if (pressDuration < 200) {
-                              // It was a short tap, toggle mode
                               setRecordMode(prev => prev === 'VOICE' ? 'VIDEO' : 'VOICE');
                             }
                           }}
-                          onPointerCancel={(e) => {
-                            e.preventDefault();
-                            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                              e.currentTarget.releasePointerCapture(e.pointerId);
-                            }
-                            if (timerRef.current) {
-                              clearTimeout(timerRef.current);
-                            }
-                            if (isPressingRef.current) {
-                              if (recordMode === 'VOICE') stopRecording();
-                              else stopVideoRecording();
-                            }
-                          }}
-                          className={`p-3 rounded-2xl transition-all touch-none ${isRecording || isVideoRecording ? 'bg-red-500/20 text-red-500 scale-110' : 'glass hover:bg-white/10'}`}
-                          title={`Нажмите для переключения на ${recordMode === 'VOICE' ? 'видео' : 'аудио'}, удерживайте для записи`}
+                          className={`w-11 h-11 rounded-full flex items-center justify-center transition-all ${isRecording || isVideoRecording ? 'bg-red-500 text-white scale-125 shadow-lg' : 'bg-primary text-white shadow-md shadow-primary/20 hover:scale-105'}`}
                         >
-                          {recordMode === 'VOICE' ? <Mic className="w-4 h-4 pointer-events-none" /> : <Camera className="w-4 h-4 pointer-events-none" />}
+                          {recordMode === 'VOICE' ? <Mic className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

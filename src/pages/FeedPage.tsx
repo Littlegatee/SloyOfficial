@@ -503,193 +503,179 @@ export default function FeedPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto px-4 py-6 md:py-8 space-y-6">
-        {/* Create Post Card */}
-        <div className="glass rounded-3xl p-5 border border-border/40 shadow-xl shadow-black/5">
-          <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-subtle flex items-center justify-center shrink-0 overflow-hidden">
-              {profile?.avatar_url ? (
-                <img src={profile.avatar_url} className="w-full h-full object-cover" alt="Avatar" />
-              ) : (
-                <span className="text-xl font-bold text-gradient">{profile?.first_name?.charAt(0)}</span>
-              )}
+      <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+        {/* Create Post */}
+        <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
+          <textarea
+            value={newPost}
+            onChange={(e) => setNewPost(e.target.value)}
+            placeholder="Что нового?"
+            className="w-full p-3 bg-muted rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-primary mb-3 text-sm"
+            rows={3}
+          />
+          
+          {selectedImage && (
+            <div className="relative mb-3">
+              <img
+                src={URL.createObjectURL(selectedImage)}
+                className="w-full max-h-96 object-cover rounded-lg"
+                alt="Preview"
+              />
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="flex-1 space-y-4">
-              <textarea
-                value={newPost}
-                onChange={(e) => setNewPost(e.target.value)}
-                placeholder="Что нового?"
-                className="w-full bg-transparent border-none focus:ring-0 text-lg placeholder:text-muted-foreground resize-none min-h-[100px]"
+          )}
+
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2 text-muted-foreground hover:text-primary transition-colors"
+                title="Прикрепить фото/видео"
+              >
+                <ImageIcon className="w-5 h-5" />
+              </button>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept="image/*,video/*"
+                className="hidden"
               />
               
-              {selectedImage && (
-                <div className="relative rounded-2xl overflow-hidden border border-border/50 group">
-                  <img
-                    src={URL.createObjectURL(selectedImage)}
-                    className="w-full max-h-[400px] object-cover"
-                    alt="Preview"
-                  />
-                  <button
-                    onClick={() => setSelectedImage(null)}
-                    className="absolute top-3 right-3 p-2 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-black/60 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <button className="p-2 text-muted-foreground hover:text-primary transition-colors">
+                    <Users className="w-5 h-5" />
                   </button>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-2 border-t border-border/10">
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="p-3 rounded-2xl hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all group"
-                    title="Прикрепить фото/видео"
-                  >
-                    <ImageIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                  </button>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept="image/*,video/*"
-                    className="hidden"
-                  />
-                  
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <button className="p-3 rounded-2xl hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all group">
-                        <Users className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogTitle>Опубликовать от имени</DialogTitle>
+                  <DialogDescription>Выберите автора поста</DialogDescription>
+                  <div className="space-y-2 mt-4">
+                    <button
+                      onClick={() => {
+                        setSelectedAuthor({ type: 'USER', id: null });
+                        // close dialog logic usually handled by UI
+                      }}
+                      className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${
+                        selectedAuthor.type === 'USER' ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center font-bold">Я</div>
+                      <span>Личный профиль</span>
+                    </button>
+                    {myCommunities.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedAuthor({ type: 'COMMUNITY', id: c.id })}
+                        className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors ${
+                          selectedAuthor.id === c.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                        }`}
+                      >
+                        {c.avatar_url ? (
+                          <img src={c.avatar_url} className="w-8 h-8 rounded-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center font-bold">C</div>
+                        )}
+                        <span>{c.name}</span>
                       </button>
-                    </DialogTrigger>
-                    <DialogContent className="glass-strong border-border/40 rounded-3xl">
-                      <DialogTitle className="text-xl font-bold">Опубликовать от имени</DialogTitle>
-                      <DialogDescription className="text-muted-foreground mt-2">Выберите автора поста</DialogDescription>
-                      <div className="space-y-2 mt-4">
-                        <button
-                          onClick={() => {
-                            setSelectedAuthor({ type: 'USER', id: null });
-                            // close dialog logic usually handled by UI
-                          }}
-                          className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all ${
-                            selectedAuthor.type === 'USER' ? 'bg-primary/20 text-primary border border-primary/30' : 'hover:bg-accent'
-                          }`}
-                        >
-                          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold">Я</div>
-                          <span className="font-medium">Личный профиль</span>
-                        </button>
-                        {myCommunities.map(c => (
-                          <button
-                            key={c.id}
-                            onClick={() => setSelectedAuthor({ type: 'COMMUNITY', id: c.id })}
-                            className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all ${
-                              selectedAuthor.id === c.id ? 'bg-primary/20 text-primary border border-primary/30' : 'hover:bg-accent'
-                            }`}
-                          >
-                            {c.avatar_url ? (
-                              <img src={c.avatar_url} className="w-10 h-10 rounded-xl object-cover" alt="" />
-                            ) : (
-                              <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center font-bold">C</div>
-                            )}
-                            <span className="font-medium">{c.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-
-                <button
-                  disabled={posting || (!newPost.trim() && !selectedImage)}
-                  onClick={handleCreatePost}
-                  className="btn-gradient px-8 py-3 rounded-2xl font-bold flex items-center gap-2 disabled:opacity-50 disabled:scale-100"
-                >
-                  {posting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-                  <span>Опубликовать</span>
-                </button>
-              </div>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
+
+            <button
+              disabled={posting || (!newPost.trim() && !selectedImage)}
+              onClick={handleCreatePost}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Опубликовать
+            </button>
           </div>
         </div>
 
-        {/* Feed Filter */}
-        <div className="flex items-center gap-2 p-1.5 glass rounded-2xl border border-border/40 w-fit">
+        {/* Filter */}
+        <div className="flex gap-2">
           <button
             onClick={() => setRecommendationType('main')}
-            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-              recommendationType === 'main' ? 'bg-white/10 dark:bg-white/5 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              recommendationType === 'main' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground hover:bg-muted border border-border'
             }`}
           >
-            Для вас
+            Главная
           </button>
           <button
             onClick={() => setRecommendationType('friends')}
-            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-              recommendationType === 'friends' ? 'bg-white/10 dark:bg-white/5 text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              recommendationType === 'friends' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground hover:bg-muted border border-border'
             }`}
           >
             Друзья
           </button>
         </div>
 
-        {/* Posts List */}
-        <div className="space-y-6 pb-20">
+        {/* Posts */}
+        <div className="space-y-4">
           {loading ? (
             Array(3).fill(0).map((_, i) => (
-              <div key={i} className="glass rounded-3xl p-6 h-96 animate-pulse" />
+              <div key={i} className="bg-card p-4 rounded-xl h-64 animate-pulse border border-border" />
             ))
           ) : posts.length === 0 ? (
-            <div className="text-center py-20 space-y-4">
-              <div className="w-20 h-20 bg-accent rounded-full flex items-center justify-center mx-auto">
-                <Users className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <p className="text-muted-foreground font-medium">Лента пока пуста. Подпишитесь на кого-нибудь!</p>
+            <div className="text-center py-12 bg-card rounded-xl border border-border">
+              <p className="text-muted-foreground">Лента пока пуста</p>
             </div>
           ) : (
             posts.map((post) => (
-              <div key={post.id} className="glass rounded-3xl overflow-hidden border border-border/40 shadow-xl shadow-black/5 feed-card-entrance group">
-                {/* Post Header */}
-                <div className="p-5 flex items-center justify-between">
+              <div key={post.id} className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
+                <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate(post.user_id === user?.id ? "/profile" : `/u/${post.user.profile.username}`)}>
                     <div className="relative">
-                      <div className="w-12 h-12 rounded-2xl bg-gradient-subtle flex items-center justify-center overflow-hidden border border-white/10 shadow-lg">
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
                         {post.user.profile.avatar_url ? (
                           <img src={post.user.profile.avatar_url} className="w-full h-full object-cover" alt="" />
                         ) : (
-                          <span className="text-lg font-bold text-gradient">{post.user.profile.first_name.charAt(0)}</span>
+                          <span className="text-sm font-bold text-muted-foreground">{post.user.profile.first_name.charAt(0)}</span>
                         )}
                       </div>
                       {post.user.profile.is_verified && (
-                        <div className="absolute -bottom-1 -right-1 bg-white dark:bg-black rounded-full p-0.5 shadow-sm">
-                          <VerifiedBadge className="w-4 h-4" />
+                        <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-0.5">
+                          <VerifiedBadge className="w-3 h-3" />
                         </div>
                       )}
                     </div>
                     <div>
-                      <p className="font-bold text-sm hover:text-primary transition-colors">{post.user.profile.first_name}</p>
-                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{timeAgo(post.created_at)}</p>
+                      <p className="font-semibold text-sm hover:text-primary transition-colors">{post.user.profile.first_name}</p>
+                      <p className="text-xs text-muted-foreground">{timeAgo(post.created_at)}</p>
                     </div>
                   </div>
                   
                   <div className="relative">
                     <button 
                       onClick={() => setActiveMenuId(activeMenuId === post.id ? null : post.id)}
-                      className="p-2 rounded-xl hover:bg-accent text-muted-foreground transition-all"
+                      className="p-1 rounded-full hover:bg-muted text-muted-foreground transition-colors"
                     >
                       <MoreVertical className="w-5 h-5" />
                     </button>
                     {activeMenuId === post.id && (
-                      <div className="absolute right-0 mt-2 w-48 glass-strong rounded-2xl border border-border/40 shadow-2xl z-20 py-1.5 animate-in fade-in zoom-in duration-200">
+                      <div className="absolute right-0 mt-2 w-48 bg-card rounded-lg shadow-xl border border-border z-10 py-1">
                         {post.user_id === user?.id ? (
                           <>
-                            <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-primary/10 hover:text-primary transition-colors flex items-center gap-3">
+                            <button className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2">
                               <Edit2 className="w-4 h-4" /> Изменить
                             </button>
-                            <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-red-500/10 text-red-500 transition-colors flex items-center gap-3">
+                            <button className="w-full px-4 py-2 text-left text-sm hover:bg-muted text-destructive flex items-center gap-2">
                               <Trash2 className="w-4 h-4" /> Удалить
                             </button>
                           </>
                         ) : (
-                          <button className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-accent transition-colors flex items-center gap-3">
+                          <button className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2">
                             <X className="w-4 h-4" /> Скрыть пост
                           </button>
                         )}
@@ -698,45 +684,39 @@ export default function FeedPage() {
                   </div>
                 </div>
 
-                {/* Post Content */}
-                <div className="px-5 pb-4">
-                  <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{post.content_text}</p>
+                <div className="px-4 pb-2">
+                  <p className="text-sm whitespace-pre-wrap">{post.content_text}</p>
                 </div>
 
-                {/* Post Media */}
                 {post.media_url && (
-                  <div className="px-2 pb-2">
-                    <div className="relative rounded-2xl overflow-hidden border border-white/5 bg-accent/50 aspect-video group/media">
+                  <div className="px-4 pb-2">
+                    <div className="relative rounded-lg overflow-hidden border border-border">
                       <BlurImage
                         src={post.media_url}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover/media:scale-105"
+                        className="w-full max-h-[500px] object-cover"
                         alt=""
                       />
-                      <button className="absolute top-4 right-4 p-2.5 bg-black/40 backdrop-blur-md rounded-full text-white opacity-0 group-hover/media:opacity-100 transition-all scale-90 group-hover/media:scale-100">
-                        <Maximize2 className="w-5 h-5" />
-                      </button>
                     </div>
                   </div>
                 )}
 
-                {/* Post Actions */}
-                <div className="p-4 flex items-center justify-between border-t border-border/5">
-                  <div className="flex items-center gap-2">
+                <div className="p-4 flex items-center justify-between border-t border-border">
+                  <div className="flex items-center gap-4">
                     <button
                       onClick={() => toggleLike(post.id, post.liked_by_me)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-2xl transition-all font-bold text-sm ${
-                        post.liked_by_me ? 'bg-red-500/10 text-red-500' : 'hover:bg-accent text-muted-foreground'
+                      className={`flex items-center gap-1 text-sm transition-colors ${
+                        post.liked_by_me ? 'text-red-500' : 'text-muted-foreground hover:text-red-500'
                       }`}
                     >
-                      <Heart className={`w-5 h-5 transition-transform ${post.liked_by_me ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
+                      <Heart className={`w-5 h-5 ${post.liked_by_me ? 'fill-current' : ''}`} />
                       <span>{post.likes_count > 0 && post.likes_count}</span>
                     </button>
                     
                     <button
                       onClick={() => setExpandedPostId(expandedPostId === post.id ? null : post.id)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-2xl hover:bg-accent text-muted-foreground transition-all font-bold text-sm group/btn"
+                      className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
                     >
-                      <MessageCircle className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                      <MessageCircle className="w-5 h-5" />
                       <span>{post.comments_count > 0 && post.comments_count}</span>
                     </button>
                   </div>
@@ -746,30 +726,28 @@ export default function FeedPage() {
                       setSharePost(post);
                       // fetch friends logic
                     }}
-                    className="p-3 rounded-2xl hover:bg-accent text-muted-foreground transition-all group/btn"
+                    className="text-muted-foreground hover:text-primary transition-colors"
                   >
-                    <Share2 className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                    <Share2 className="w-5 h-5" />
                   </button>
                 </div>
 
-                {/* Comments Section (Optional: expanded) */}
                 {expandedPostId === post.id && (
-                  <div className="p-5 border-t border-border/5 bg-accent/5 animate-in slide-in-from-top-4 duration-300">
-                    <div className="space-y-4 max-h-[400px] overflow-y-auto hide-scrollbar">
+                  <div className="p-4 border-t border-border bg-muted/30">
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
                       {/* Comments would go here */}
-                      <p className="text-center text-xs text-muted-foreground py-4 font-medium uppercase tracking-widest">Комментарии</p>
                     </div>
                     
-                    <div className="mt-4 flex gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-accent shrink-0 overflow-hidden">
+                    <div className="mt-4 flex gap-2">
+                      <div className="w-8 h-8 rounded-full bg-muted shrink-0 overflow-hidden">
                         {profile?.avatar_url && <img src={profile.avatar_url} className="w-full h-full object-cover" alt="" />}
                       </div>
                       <div className="flex-1 relative">
                         <input
                           placeholder="Написать комментарий..."
-                          className="w-full glass rounded-2xl py-2 px-4 text-sm pr-10 border-none focus:ring-1 focus:ring-primary/30"
+                          className="w-full bg-card border border-border rounded-full py-1.5 px-3 text-sm pr-10 focus:outline-none focus:ring-1 focus:ring-primary"
                         />
-                        <button className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-primary hover:scale-110 transition-transform">
+                        <button className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:scale-110 transition-transform">
                           <Send className="w-4 h-4" />
                         </button>
                       </div>
