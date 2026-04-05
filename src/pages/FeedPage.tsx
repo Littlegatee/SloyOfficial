@@ -13,8 +13,9 @@ import {
   Dialog,
   DialogContent,
   DialogTrigger,
-  DialogTitle,
   DialogDescription,
+  DialogTitle,
+  DialogClose,
 } from "@/components/ui/dialog";
 
 interface Comment {
@@ -702,12 +703,12 @@ export default function FeedPage() {
                 {post.media_url && (
                   <div className="px-4 pb-2">
                     <div 
-                      className="relative rounded-lg overflow-hidden border border-border cursor-zoom-in"
+                      className="relative rounded-lg overflow-hidden border border-border cursor-zoom-in bg-muted/20"
                       onClick={() => setZoomedImage(post.media_url)}
                     >
                       <BlurImage
                         src={post.media_url}
-                        className="w-full max-h-[500px] object-cover"
+                        className="w-full h-auto max-h-[650px] object-contain mx-auto"
                         alt=""
                       />
                     </div>
@@ -773,21 +774,23 @@ export default function FeedPage() {
 
       {/* Lightbox */}
       <Dialog open={!!zoomedImage} onOpenChange={(open) => !open && setZoomedImage(null)}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 overflow-hidden border-none bg-black/90">
-          <div className="relative w-full h-full flex items-center justify-center">
+        <DialogContent className="max-w-[100vw] max-h-[100vh] p-0 overflow-hidden border-none bg-black/95 sm:rounded-none flex items-center justify-center">
+          <div className="relative w-full h-full flex items-center justify-center p-4">
             {zoomedImage && (
               <img
                 src={zoomedImage}
-                className="max-w-full max-h-[90vh] object-contain"
+                className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-200"
                 alt="Full screen"
               />
             )}
-            <button
-              onClick={() => setZoomedImage(null)}
-              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            <DialogClose asChild>
+              <button
+                className="absolute top-6 right-6 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all hover:rotate-90 z-[100]"
+                title="Закрыть"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </DialogClose>
           </div>
         </DialogContent>
       </Dialog>

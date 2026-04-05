@@ -308,15 +308,27 @@ export default function MusicPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={duration || 100}
-              value={currentTime || 0}
-              onChange={(e) => seek(Number(e.target.value))}
-              className="w-full h-1 bg-accent rounded-lg appearance-none cursor-pointer accent-primary"
-            />
-            <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+            <div className="relative w-full h-1.5 flex items-center group/slider">
+              <input
+                type="range"
+                min={0}
+                max={duration || 100}
+                value={currentTime || 0}
+                onChange={(e) => seek(Number(e.target.value))}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
+              <div className="w-full h-1 bg-accent/50 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-100" 
+                  style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}
+                />
+              </div>
+              <div 
+                className="absolute w-3 h-3 bg-white rounded-full shadow-md border border-primary/20 pointer-events-none transition-all"
+                style={{ left: `calc(${duration ? (currentTime / duration) * 100 : 0}% - 6px)` }}
+              />
+            </div>
+            <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap min-w-[65px]">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>
@@ -399,7 +411,7 @@ export default function MusicPage() {
                       else playTrack(tr, tracks);
                     }}
                     className={`flex items-center gap-3 p-2 rounded-xl transition-all cursor-pointer group hover:bg-accent/50 border ${
-                      currentTrack?.id === tr.id ? "bg-accent/30 border-primary/30" : "border-border/5"
+                      currentTrack?.id === tr.id ? "bg-accent/30 border-primary/30 shadow-sm" : "border-border/10 bg-card/20"
                     }`}
                   >
                     <div className="relative shrink-0">
