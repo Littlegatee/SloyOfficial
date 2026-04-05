@@ -708,7 +708,8 @@ export default function FeedPage() {
                     >
                       <BlurImage
                         src={post.media_url}
-                        className="w-full h-auto max-h-[650px] object-contain mx-auto"
+                        className="w-full h-auto max-h-[650px] mx-auto"
+                        objectFit="contain"
                         alt=""
                       />
                     </div>

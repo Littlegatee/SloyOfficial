@@ -161,7 +161,7 @@
 
   /* Telegram-like Chat Bubbles */
   .tg-bubble {
-    @apply relative max-w-[85%] sm:max-w-[75%] px-3.5 py-2.5 rounded-2xl shadow-sm text-sm transition-all duration-200;
+    @apply relative max-w-[85%] sm:max-w-[75%] px-3.5 py-2.5 rounded-2xl shadow-sm text-sm transition-all duration-200 overflow-hidden;
   }
 
   .tg-bubble-in {

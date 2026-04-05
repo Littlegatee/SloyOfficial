@@ -105,21 +105,38 @@ router.get('/status/:userId', authenticateToken, async (req: any, res) => {
 });
 
 // Send/Request friendship
-router.post('/request/:userId', authenticateToken, async (req: any, res) => {
+router.post('/request/:target', authenticateToken, async (req: any, res) => {
   const userId = req.user.id;
-  const targetUserId = req.params.userId;
+  const target = req.params.target;
   
-  console.log(`Friend request from ${userId} to ${targetUserId}`);
+  console.log(`Friend request from ${userId} to ${target}`);
 
-  if (userId === targetUserId) {
+  if (userId === target) {
     return res.status(400).json({ error: "Cannot friend yourself" });
   }
 
   try {
-    const targetProfile = await prisma.profile.findUnique({
-      where: { user_id: targetUserId },
+    // Support both UUID and username
+    const targetProfile = await prisma.profile.findFirst({
+      where: {
+        OR: [
+          { user_id: target },
+          { username: target }
+        ]
+      },
     });
-    if (targetProfile && targetProfile.allow_friend_requests === false) {
+
+    if (!targetProfile) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    const targetUserId = targetProfile.user_id;
+
+    if (userId === targetUserId) {
+      return res.status(400).json({ error: "Cannot friend yourself" });
+    }
+
+    if (targetProfile.allow_friend_requests === false) {
       return res.status(403).json({ error: "Пользователь не принимает заявки в друзья" });
     }
 
@@ -139,7 +156,6 @@ router.post('/request/:userId', authenticateToken, async (req: any, res) => {
 
     const friendship = await prisma.friendship.create({
       data: { 
-        id: crypto.randomUUID(),
         user_id: userId, 
         friend_id: targetUserId,
         status: 'PENDING'

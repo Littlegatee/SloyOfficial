@@ -34,9 +34,15 @@ export default function BlurImage({
         loading={loading}
         decoding="async"
         onLoad={() => setLoaded(true)}
-        className={`relative z-[1] w-full h-full ${fit} transition-[filter,opacity,transform] duration-500 ease-out ${
+        className={`relative z-[1] transition-[filter,opacity,transform] duration-500 ease-out ${
           loaded ? "opacity-100 blur-0 scale-100" : "opacity-0 blur-md scale-105"
         }`}
+        style={{ 
+          width: '100%', 
+          height: 'auto', 
+          maxHeight: 'inherit',
+          objectFit 
+        }}
       />
     </span>
   );

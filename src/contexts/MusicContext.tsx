@@ -48,7 +48,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     audioRef.current = audio;
 
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const handleLoadedMetadata = () => {
+    const updateDuration = () => {
         if (audio.duration && isFinite(audio.duration)) {
             setDuration(audio.duration);
         }
@@ -58,7 +58,9 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const handleEnded = () => playNext();
 
     audio.addEventListener("timeupdate", handleTimeUpdate);
-    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("loadedmetadata", updateDuration);
+    audio.addEventListener("durationchange", updateDuration);
+    audio.addEventListener("canplay", updateDuration);
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
@@ -66,7 +68,9 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       audio.pause();
       audio.removeEventListener("timeupdate", handleTimeUpdate);
-      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("loadedmetadata", updateDuration);
+      audio.removeEventListener("durationchange", updateDuration);
+      audio.removeEventListener("canplay", updateDuration);
       audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("ended", handleEnded);

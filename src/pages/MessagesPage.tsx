@@ -185,15 +185,15 @@ const VoiceWaveform = ({ url, duration, isMine }: { url: string; duration: numbe
   }, [url, isMine]);
 
   return (
-    <div className="flex items-center gap-3 py-1 min-w-[200px]">
+    <div className="flex items-center gap-3 py-1 w-full max-w-[280px]">
       <button 
         onClick={() => waveSurferRef.current?.playPause()}
         className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isMine ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}
       >
         {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
       </button>
-      <div className="flex-1 flex flex-col gap-1">
-        <div ref={containerRef} className="w-full" />
+      <div className="flex-1 flex flex-col gap-1 min-w-0 overflow-hidden">
+        <div ref={containerRef} className="w-full overflow-hidden" />
         <div className="flex justify-between text-[10px] opacity-70">
           <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)}</span>
           <span>{new Date(duration * 1000).toISOString().substr(14, 5)}</span>
@@ -2168,6 +2168,20 @@ export default function MessagesPage() {
       }
       if (msg.message_type === 'STICKER') {
         return <img src={msg.media_url!} alt="sticker" className="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-lg" />;
+      }
+      if (msg.message_type === 'VIDEO_CIRCLE') {
+        return (
+          <div className="w-48 h-48 sm:w-60 sm:h-60 rounded-full overflow-hidden border-2 border-primary/20 bg-black/20">
+            <video 
+              src={msg.media_url!} 
+              className="w-full h-full object-cover" 
+              autoPlay 
+              loop 
+              muted 
+              playsInline 
+            />
+          </div>
+        );
       }
       if (msg.message_type === 'POLL') {
         return <PollItem msg={msg} />;
