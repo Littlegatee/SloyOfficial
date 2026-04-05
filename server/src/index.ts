@@ -11,6 +11,11 @@ const app = express();
 const httpServer = createServer(app);
 const io = initSocket(httpServer);
 
+const PORT = process.env['PORT'] || 5000;
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`Server listening on 0.0.0.0:${PORT} - registering routes...`);
+});
+
 // Presence (in-memory). For production consider Redis/shared store.
 const onlineByUserId = new Map<string, { sockets: Set<string>; lastSeen: number | null }>();
 const setOnline = (userId: string, socketId: string) => {
@@ -79,6 +84,10 @@ app.use('/api/music', musicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
 
+// Health Check
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'Sloy Backend' }));
+
 // Socket.io
 io.on('connection', (socket: Socket) => {
   console.log('User connected:', socket.id);
@@ -141,7 +150,3 @@ io.on('connection', (socket: Socket) => {
   });
 });
 
-const PORT = process.env['PORT'] || 5000;
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});

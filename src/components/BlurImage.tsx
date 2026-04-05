@@ -38,7 +38,7 @@ export default function BlurImage({
           loaded ? "opacity-100 blur-0 scale-100" : "opacity-0 blur-md scale-105"
         }`}
         style={{ 
-          width: '100%', 
+          maxWidth: '100%', 
           height: 'auto', 
           maxHeight: 'inherit',
           objectFit 

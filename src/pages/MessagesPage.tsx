@@ -175,6 +175,8 @@ const VoiceWaveform = ({ url, duration, isMine }: { url: string; duration: numbe
       barRadius: 3,
       height: 30,
       url: url,
+      normalize: true,
+      minPxPerSec: 1,
     });
 
     waveSurferRef.current.on('play', () => setIsPlaying(true));
@@ -193,7 +195,7 @@ const VoiceWaveform = ({ url, duration, isMine }: { url: string; duration: numbe
         {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
       </button>
       <div className="flex-1 flex flex-col gap-1 min-w-0 overflow-hidden">
-        <div ref={containerRef} className="w-full overflow-hidden" />
+        <div ref={containerRef} className="w-full overflow-hidden rounded-lg" />
         <div className="flex justify-between text-[10px] opacity-70">
           <span>{new Date(currentTime * 1000).toISOString().substr(14, 5)}</span>
           <span>{new Date(duration * 1000).toISOString().substr(14, 5)}</span>
@@ -1275,12 +1277,15 @@ export default function MessagesPage() {
           const finalMimeType = (videoRecorderRef.current?.mimeType || 'video/webm').split(';')[0];
           const videoBlob = new Blob(videoChunksRef.current, { type: finalMimeType });
           
-          if (videoBlob.size >= 1000) {
+          if (videoBlob.size >= 100) {
+            console.log("Sending video circle, size:", videoBlob.size);
             const reader = new FileReader();
             reader.readAsDataURL(videoBlob);
             reader.onloadend = () => {
               sendMessage('VIDEO_CIRCLE', null, reader.result as string, duration);
             };
+          } else {
+            console.warn("Video blob too small to send:", videoBlob.size);
           }
         }
         
@@ -2132,6 +2137,24 @@ export default function MessagesPage() {
           </div>
         );
       }
+      if (msg.message_type === 'STICKER') {
+        return <img src={msg.media_url!} alt="sticker" className="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-lg" />;
+      }
+      if (msg.message_type === 'VIDEO_CIRCLE') {
+        return (
+          <div className="w-48 h-48 sm:w-60 sm:h-60 rounded-full overflow-hidden border-2 border-white/20 bg-black/40 shadow-xl relative group/circle">
+            <video 
+              src={msg.media_url!} 
+              className="w-full h-full object-cover scale-[1.02]" 
+              autoPlay 
+              loop 
+              muted 
+              playsInline 
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20 pointer-events-none" />
+          </div>
+        );
+      }
       if (msg.message_type === 'VOICE') {
         return <VoiceWaveform url={msg.media_url!} duration={msg.voice_duration!} isMine={isMine} />;
       }
@@ -2164,23 +2187,6 @@ export default function MessagesPage() {
               <p className={`text-[10px] ${isMine ? 'text-white/70' : 'text-muted-foreground'}`}>Нажмите, чтобы скачать</p>
             </div>
           </a>
-        );
-      }
-      if (msg.message_type === 'STICKER') {
-        return <img src={msg.media_url!} alt="sticker" className="w-24 h-24 sm:w-32 sm:h-32 object-contain drop-shadow-lg" />;
-      }
-      if (msg.message_type === 'VIDEO_CIRCLE') {
-        return (
-          <div className="w-48 h-48 sm:w-60 sm:h-60 rounded-full overflow-hidden border-2 border-primary/20 bg-black/20">
-            <video 
-              src={msg.media_url!} 
-              className="w-full h-full object-cover" 
-              autoPlay 
-              loop 
-              muted 
-              playsInline 
-            />
-          </div>
         );
       }
       if (msg.message_type === 'POLL') {

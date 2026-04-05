@@ -47,7 +47,12 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const audio = new Audio();
     audioRef.current = audio;
 
-    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleTimeUpdate = () => {
+        setCurrentTime(audio.currentTime);
+        if (audio.duration && isFinite(audio.duration)) {
+            setDuration(audio.duration);
+        }
+    };
     const updateDuration = () => {
         if (audio.duration && isFinite(audio.duration)) {
             setDuration(audio.duration);
