@@ -15,6 +15,7 @@ import CommunitySettingsPage from "./pages/CommunitySettingsPage";
 import PostSharePage from "./pages/PostSharePage";
 import MusicPage from "./pages/MusicPage";
 import NotFound from "./pages/NotFound";
+import { MusicProvider } from "@/contexts/MusicContext";
 
 function retryDelayWithJitter(attemptIndex: number) {
   const cap = 30_000;
@@ -84,9 +85,11 @@ const App = () => (
     <TooltipProvider>
       <Sonner />
       <AuthProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <AppRoutes />
-        </BrowserRouter>
+        <MusicProvider>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <AppRoutes />
+          </BrowserRouter>
+        </MusicProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

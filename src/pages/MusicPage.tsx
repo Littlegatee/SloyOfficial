@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,6 +8,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import type { AppLocale } from "@/i18n/translations";
 import { useSearchParams } from "react-router-dom";
 import BlurImage from "@/components/BlurImage";
+import { useMusic, type Track } from "@/contexts/MusicContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,18 +16,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type Track = {
-  id: string;
-  title: string;
-  artist: string | null;
-  file_url: string;
-  cover_url: string | null;
-  visibility: string;
-};
-
 export default function MusicPage() {
   const { user, profile, refreshProfile } = useAuth();
   const { t, locale, setLocale, localeLabels } = useI18n();
+  const {
+    currentTrack,
+    isPlaying,
+    currentTime,
+    duration,
+    repeatMode,
+    shuffleOn,
+    playTrack,
+    togglePlay,
+    playNext,
+    playPrev,
+    seek,
+    setRepeatMode,
+    setShuffleOn,
+  } = useMusic();
+
   const [tab, setTab] = useState<"tracks" | "albums" | "playlists">("tracks");
   const [tracks, setTracks] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<any[]>([]);
@@ -45,32 +53,7 @@ export default function MusicPage() {
   const [searchParams] = useSearchParams();
   const initialTrackId = searchParams.get("trackId");
 
-  // Player 2.0 (queue + shuffle + repeat) - пока работает в рамках "Tracks"
-  const playerAudioRef = useRef<HTMLAudioElement | null>(null);
-  const [queueSeed, setQueueSeed] = useState(0);
-  const [shuffleOn, setShuffleOn] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<"none" | "one" | "all">("none");
-  const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [durationSec, setDurationSec] = useState(0);
-  const [currentTimeSec, setCurrentTimeSec] = useState(0);
-
   const pinnedTrackId = profile?.pinned_track_id ?? null;
-
-  const shuffledQueue = useMemo(() => {
-    if (!shuffleOn) return null;
-    const arr = [...tracks];
-    // Fisher–Yates shuffle; we reshuffle when `queueSeed` changes.
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }, [shuffleOn, tracks, queueSeed]);
-
-  const effectiveQueue = shuffledQueue ?? tracks;
-  const currentTrack = tracks.find((x) => x.id === currentTrackId) ?? null;
-  const currentIndex = currentTrackId ? effectiveQueue.findIndex((x) => x.id === currentTrackId) : -1;
 
   const formatTime = (s: number) => {
     if (!Number.isFinite(s) || s < 0) return "0:00";
@@ -79,131 +62,8 @@ export default function MusicPage() {
     return `${mm}:${String(ss).padStart(2, "0")}`;
   };
 
-  const selectTrack = async (trackId: string, autoplay: boolean) => {
-    const track = tracks.find((t) => t.id === trackId);
-    setCurrentTrackId(trackId);
-    if (!autoplay) return;
-    const audio = playerAudioRef.current;
-    if (!audio || !track) return;
-    audio.src = track.file_url;
-    audio.load();
-    try {
-      await audio.play();
-    } catch {
-      toast.info("Не удалось начать воспроизведение. Нажмите Play вручную.");
-    }
-  };
-
-  const togglePlay = async () => {
-    const audio = playerAudioRef.current;
-    if (!audio) return;
-    try {
-      if (audio.paused) await audio.play();
-      else audio.pause();
-    } catch {
-      toast.info("Не удалось воспроизвести аудио.");
-    }
-  };
-
-  const playNext = () => {
-    if (!effectiveQueue.length || currentIndex < 0) return;
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= effectiveQueue.length) {
-      if (repeatMode !== "all") {
-        playerAudioRef.current?.pause();
-        return;
-      }
-      selectTrack(effectiveQueue[0].id, true);
-      return;
-    }
-    selectTrack(effectiveQueue[nextIndex].id, true);
-  };
-
-  const playPrev = () => {
-    if (!effectiveQueue.length || currentIndex < 0) return;
-    const prevIndex = currentIndex - 1;
-    if (prevIndex < 0) {
-      if (repeatMode !== "all") {
-        selectTrack(effectiveQueue[0].id, true);
-        return;
-      }
-      selectTrack(effectiveQueue[effectiveQueue.length - 1].id, true);
-      return;
-    }
-    selectTrack(effectiveQueue[prevIndex].id, true);
-  };
-
-  const handleAudioEnded = () => {
-    const audio = playerAudioRef.current;
-    if (!audio) return;
-
-    if (repeatMode === "one") {
-      audio.currentTime = 0;
-      audio.play().catch(() => undefined);
-      return;
-    }
-
-    if (!effectiveQueue.length) return;
-    const idx = currentTrackId ? effectiveQueue.findIndex((x) => x.id === currentTrackId) : -1;
-    const nextIdx = idx + 1;
-
-    if (nextIdx >= effectiveQueue.length) {
-      if (repeatMode === "all") {
-        selectTrack(effectiveQueue[0].id, true);
-      } else {
-        audio.pause();
-        setIsPlaying(false);
-      }
-      return;
-    }
-
-    selectTrack(effectiveQueue[nextIdx].id, true);
-  };
-
-  // Pick initial track from deep link
-  useEffect(() => {
-    if (!tracks.length) return;
-    if (initialTrackId && tracks.some((t) => t.id === initialTrackId)) {
-      setCurrentTrackId(initialTrackId);
-      return;
-    }
-    if (!currentTrackId) setCurrentTrackId(tracks[0].id);
-  }, [tracks, initialTrackId]); // intentionally ignore currentTrackId to avoid fighting user selection
-
-  // When tracks list changes, ensure currentTrackId still exists.
-  useEffect(() => {
-    if (!tracks.length) return;
-    if (currentTrackId && tracks.some((t) => t.id === currentTrackId)) return;
-    setCurrentTrackId(tracks[0].id);
-  }, [tracks]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Keep the audio element in sync with currentTrackId (without auto-play).
-  useEffect(() => {
-    const audio = playerAudioRef.current;
-    if (!audio) return;
-    if (!currentTrack) return;
-    audio.src = currentTrack.file_url;
-    audio.load();
-    setCurrentTimeSec(0);
-    setDurationSec(0);
-  }, [currentTrackId, tracks]); // currentTrack is derived
-
-  const seekToPercent = (percent: number) => {
-    const audio = playerAudioRef.current;
-    if (!audio || !durationSec) return;
-    audio.currentTime = (durationSec * percent) / 100;
-  };
-
   const cycleRepeat = () => {
-    setRepeatMode((m) => (m === "none" ? "one" : m === "one" ? "all" : "none"));
-  };
-
-  const toggleShuffle = () => {
-    setShuffleOn((v) => {
-      const next = !v;
-      if (next) setQueueSeed((s) => s + 1);
-      return next;
-    });
+    setRepeatMode(repeatMode === "none" ? "one" : repeatMode === "one" ? "all" : "none");
   };
 
   const togglePin = async (track: Track) => {
@@ -261,7 +121,16 @@ export default function MusicPage() {
   useEffect(() => {
     load();
     if (user) refreshProfile();
-  }, [user, refreshProfile]); // keep pinned track state fresh
+  }, [user]); // refreshProfile added to context, calling here once
+
+  // Pick initial track from deep link
+  useEffect(() => {
+    if (!tracks.length) return;
+    if (initialTrackId && !currentTrack) {
+      const found = tracks.find((t) => t.id === initialTrackId);
+      if (found) playTrack(found, tracks);
+    }
+  }, [tracks, initialTrackId, currentTrack, playTrack]);
 
   const readFile = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -390,8 +259,8 @@ export default function MusicPage() {
         </div>
       </div>
 
-      {tab === "tracks" && tracks.length > 0 && currentTrack ? (
-        <div className="mb-6 glass rounded-2xl p-4 space-y-3">
+      {currentTrack ? (
+        <div className="mb-6 glass rounded-2xl p-4 space-y-3 border border-border/20 shadow-lg">
           <div className="flex items-center gap-3">
             {currentTrack.cover_url ? (
               <div className="w-14 h-14 rounded-xl overflow-hidden bg-muted">
@@ -422,7 +291,7 @@ export default function MusicPage() {
               <button
                 type="button"
                 onClick={togglePlay}
-                className="p-2 rounded-xl btn-gradient text-white"
+                className="p-2 rounded-xl btn-gradient text-white shadow-md shadow-primary/20"
                 title="Play"
               >
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -442,20 +311,20 @@ export default function MusicPage() {
             <input
               type="range"
               min={0}
-              max={100}
-              value={durationSec ? Math.min((currentTimeSec / durationSec) * 100, 100) : 0}
-              onChange={(e) => seekToPercent(Number(e.target.value))}
-              className="w-full"
+              max={duration || 100}
+              value={currentTime || 0}
+              onChange={(e) => seek(Number(e.target.value))}
+              className="w-full h-1 bg-accent rounded-lg appearance-none cursor-pointer accent-primary"
             />
             <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
-              {formatTime(currentTimeSec)} / {formatTime(durationSec)}
+              {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               type="button"
-              onClick={toggleShuffle}
+              onClick={() => setShuffleOn(!shuffleOn)}
               className={`p-2 rounded-xl ${shuffleOn ? "bg-primary/10 text-primary" : "bg-accent hover:bg-accent/70 text-foreground"}`}
               title="Shuffle"
             >
@@ -502,7 +371,7 @@ export default function MusicPage() {
             type="button"
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-medium transition-all ${
-              tab === id ? "btn-gradient" : "glass text-muted-foreground"
+              tab === id ? "btn-gradient" : "glass text-muted-foreground border border-border/10"
             }`}
           >
             <Icon className="w-4 h-4" />
@@ -518,7 +387,7 @@ export default function MusicPage() {
       ) : (
         <>
           {tab === "tracks" && (
-            <div className="space-y-1">
+            <div className="space-y-2">
               {tracks.length === 0 ? (
                 <p className="text-muted-foreground text-sm">{t("music.empty")}</p>
               ) : (
@@ -526,11 +395,11 @@ export default function MusicPage() {
                   <div
                     key={tr.id}
                     onClick={() => {
-                      if (currentTrackId === tr.id) togglePlay();
-                      else selectTrack(tr.id, true);
+                      if (currentTrack?.id === tr.id) togglePlay();
+                      else playTrack(tr, tracks);
                     }}
-                    className={`flex items-center gap-3 p-2 rounded-xl transition-colors cursor-pointer group hover:bg-accent/50 ${
-                      currentTrackId === tr.id ? "bg-accent/30" : ""
+                    className={`flex items-center gap-3 p-2 rounded-xl transition-all cursor-pointer group hover:bg-accent/50 border ${
+                      currentTrack?.id === tr.id ? "bg-accent/30 border-primary/30" : "border-border/5"
                     }`}
                   >
                     <div className="relative shrink-0">
@@ -542,11 +411,11 @@ export default function MusicPage() {
                           objectFit="cover"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center border border-border/10">
                           <Music className="w-5 h-5 text-muted-foreground" />
                         </div>
                       )}
-                      {currentTrackId === tr.id && isPlaying && (
+                      {currentTrack?.id === tr.id && isPlaying && (
                         <div className="absolute inset-0 bg-black/20 flex items-center justify-center rounded-lg">
                           <div className="flex gap-0.5 items-end h-4">
                             <div className="w-1 bg-white animate-[music-bar_0.6s_ease-in-out_infinite]" />
@@ -558,7 +427,7 @@ export default function MusicPage() {
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${currentTrackId === tr.id ? "text-primary" : ""}`}>
+                      <p className={`text-sm font-medium truncate ${currentTrack?.id === tr.id ? "text-primary" : ""}`}>
                         {tr.title}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">{tr.artist || "—"}</p>
@@ -615,7 +484,7 @@ export default function MusicPage() {
                 {t("music.createAlbum")}
               </button>
               {albums.map((a) => (
-                <div key={a.id} className="glass rounded-2xl p-4">
+                <div key={a.id} className="glass rounded-2xl p-4 border border-border/10">
                   <div className="flex justify-between items-start gap-2">
                     <div>
                       <p className="font-semibold">{a.title}</p>
@@ -652,7 +521,7 @@ export default function MusicPage() {
                 {t("music.createPlaylist")}
               </button>
               {playlists.map((p) => (
-                <div key={p.id} className="glass rounded-2xl p-4">
+                <div key={p.id} className="glass rounded-2xl p-4 border border-border/10">
                   <div className="flex justify-between items-start gap-2">
                     <div>
                       <p className="font-semibold">{p.title}</p>
@@ -679,18 +548,6 @@ export default function MusicPage() {
           )}
         </>
       )}
-
-      <audio
-        ref={playerAudioRef}
-        preload="none"
-        style={{ display: "none" }}
-        src={currentTrack?.file_url}
-        onTimeUpdate={(e) => setCurrentTimeSec(e.currentTarget.currentTime || 0)}
-        onLoadedMetadata={(e) => setDurationSec(e.currentTarget.duration || 0)}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={handleAudioEnded}
-      />
 
       {uploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">

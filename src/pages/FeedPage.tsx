@@ -514,7 +514,7 @@ export default function FeedPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+      <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
         {/* Create Post */}
         <div className="bg-card p-4 rounded-xl shadow-sm border border-border">
           <textarea

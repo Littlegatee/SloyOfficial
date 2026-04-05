@@ -150,13 +150,11 @@ export default function ProfilePage() {
       });
       setLoading(false);
 
-      // Auth/profile boot response might not include `pinned_track` relation.
-      // If user has a pinned track, fetch again to render it.
-      if (myProfile.pinned_track_id && !myProfile.pinned_track) {
-        api.get(`/profiles/${effectiveUserId}`)
-          .then(({ data }) => setTargetProfile(data))
-          .catch(() => undefined);
-      }
+      // Fetch the full profile including relations (like pinned_track) 
+      // whenever myProfile is updated (e.g. after pinning a track)
+      api.get(`/profiles/${effectiveUserId}`)
+        .then(({ data }) => setTargetProfile(data))
+        .catch(() => undefined);
     } else if (effectiveUserId) {
       setLoading(true);
       api.get(`/profiles/${effectiveUserId}`)

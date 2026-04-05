@@ -3248,7 +3248,7 @@ export default function MessagesPage() {
                     </div>
                   )}
                   
-                  <div className="flex items-end gap-2 max-w-5xl mx-auto">
+                  <div className="flex items-end gap-2 max-w-7xl mx-auto">
                     <div className="flex-1 flex items-end gap-2 bg-accent/30 dark:bg-white/5 rounded-[24px] px-3 py-1.5 min-h-[48px] border border-border/10">
                       <button
                         onClick={() => {
