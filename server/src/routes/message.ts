@@ -510,7 +510,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
 
     // Create poll if provided
     if (message_type === 'TEXT' && poll && poll.question && Array.isArray(poll.options)) {
-      await (prisma as any).poll.create({
+      await prisma.poll.create({
         data: {
           message_id: message.id,
           question: poll.question,
@@ -522,7 +522,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
     }
     
     // Clear draft if it exists
-    await (prisma as any).chatDraft.deleteMany({
+    await prisma.chatDraft.deleteMany({
       where: { user_id: sender_id, recipient_id }
     });
 
@@ -576,7 +576,7 @@ router.post('/drafts', authenticateToken, async (req: any, res) => {
   const user_id = req.user.id;
   const { recipient_id, content_text, reply_to_id } = req.body;
   try {
-    const draft = await (prisma as any).chatDraft.upsert({
+    const draft = await prisma.chatDraft.upsert({
       where: { user_id_recipient_id: { user_id, recipient_id } },
       create: { user_id, recipient_id, content_text, reply_to_id },
       update: { content_text, reply_to_id, updated_at: new Date() }
@@ -590,7 +590,7 @@ router.post('/drafts', authenticateToken, async (req: any, res) => {
 router.get('/drafts', authenticateToken, async (req: any, res) => {
   const user_id = req.user.id;
   try {
-    const drafts = await (prisma as any).chatDraft.findMany({ where: { user_id } });
+    const drafts = await prisma.chatDraft.findMany({ where: { user_id } });
     res.json(drafts);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -601,7 +601,7 @@ router.get('/drafts', authenticateToken, async (req: any, res) => {
 router.get('/folders', authenticateToken, async (req: any, res) => {
   const user_id = req.user.id;
   try {
-    const folders = await (prisma as any).chatFolder.findMany({
+    const folders = await prisma.chatFolder.findMany({
       where: { user_id },
       orderBy: { position: 'asc' }
     });
@@ -615,7 +615,7 @@ router.post('/folders', authenticateToken, async (req: any, res) => {
   const user_id = req.user.id;
   const { name, icon, filters, position } = req.body;
   try {
-    const folder = await (prisma as any).chatFolder.create({
+    const folder = await prisma.chatFolder.create({
       data: { user_id, name, icon, filters, position: position || 0 }
     });
     res.json(folder);
@@ -630,15 +630,15 @@ router.post('/polls/:pollId/vote', authenticateToken, async (req: any, res) => {
   const poll_id = req.params.pollId;
   const { option_id } = req.body;
   try {
-    const poll = await (prisma as any).poll.findUnique({ where: { id: poll_id } });
+    const poll = await prisma.poll.findUnique({ where: { id: poll_id } });
     if (!poll) return res.status(404).json({ error: "Опрос не найден" });
     if (poll.closed) return res.status(400).json({ error: "Опрос завершен" });
 
     if (!poll.multiple) {
-      await (prisma as any).pollVote.deleteMany({ where: { poll_id, user_id } });
+      await prisma.pollVote.deleteMany({ where: { poll_id, user_id } });
     }
 
-    const vote = await (prisma as any).pollVote.upsert({
+    const vote = await prisma.pollVote.upsert({
       where: { poll_id_user_id_option_id: { poll_id, user_id, option_id } },
       create: { poll_id, user_id, option_id },
       update: {}
@@ -654,7 +654,7 @@ router.post('/polls/:pollId/vote', authenticateToken, async (req: any, res) => {
 // Stickers API
 router.get('/sticker-packs', authenticateToken, async (req: any, res) => {
   try {
-    const packs = await (prisma as any).stickerPack.findMany({
+    const packs = await prisma.stickerPack.findMany({
       include: { stickers: { orderBy: { position: 'asc' } } }
     });
     res.json(packs);
@@ -668,7 +668,7 @@ router.get('/configs/:otherUserId', authenticateToken, async (req: any, res) => 
   const user_id = req.user.id;
   const other_user_id = req.params.otherUserId;
   try {
-    const config = await (prisma as any).userChatConfig.findUnique({
+    const config = await prisma.userChatConfig.findUnique({
       where: { user_id_other_user_id: { user_id, other_user_id } }
     });
     res.json(config || {});
@@ -682,7 +682,7 @@ router.post('/configs/:otherUserId', authenticateToken, async (req: any, res) =>
   const other_user_id = req.params.otherUserId;
   const { bubble_color, text_color, notif_sound } = req.body;
   try {
-    const config = await (prisma as any).userChatConfig.upsert({
+    const config = await prisma.userChatConfig.upsert({
       where: { user_id_other_user_id: { user_id, other_user_id } },
       create: { user_id, other_user_id, bubble_color, text_color, notif_sound },
       update: { bubble_color, text_color, notif_sound }

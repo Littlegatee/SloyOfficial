@@ -174,17 +174,19 @@ export default function FeedPage() {
             localStorage.setItem(feedCacheKey, JSON.stringify({ ts: Date.now(), posts: slim }));
           } catch (e) {
             console.error("Cache write failed:", e);
+            // If quota exceeded, clear all managed caches and try once more with even smaller subset
             if (e instanceof DOMException && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED")) {
               try {
-                // Clear all feed caches if one fails, to make room
                 const keys = Object.keys(localStorage);
                 for (const key of keys) {
-                  if (key.startsWith("feed_cache:")) localStorage.removeItem(key);
+                  if (key.startsWith("feed_cache:") || key.startsWith("dialogs_cache:")) {
+                    localStorage.removeItem(key);
+                  }
                 }
-                const slim = stripFeedPostsForCache(prepared);
-                localStorage.setItem(feedCacheKey, JSON.stringify({ ts: Date.now(), posts: slim }));
+                const extraSlim = prepared.slice(0, 10); // Only 10 posts
+                localStorage.setItem(feedCacheKey, JSON.stringify({ ts: Date.now(), posts: stripFeedPostsForCache(extraSlim) }));
               } catch (inner) {
-                console.error("Critical cache failure:", inner);
+                console.error("Critical cache failure after cleanup:", inner);
               }
             }
           }

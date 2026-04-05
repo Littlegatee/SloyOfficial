@@ -465,11 +465,13 @@ export default function MessagesPage() {
           api.get("/messages/folders"),
           api.get("/messages/drafts")
         ]);
-        setFolders(foldersData);
+        setFolders(Array.isArray(foldersData) ? foldersData : []);
         const draftsMap: Record<string, any> = {};
-        draftsData.forEach((d: any) => {
-          draftsMap[d.recipient_id] = { content_text: d.content_text, reply_to_id: d.reply_to_id };
-        });
+        if (Array.isArray(draftsData)) {
+          draftsData.forEach((d: any) => {
+            draftsMap[d.recipient_id] = { content_text: d.content_text, reply_to_id: d.reply_to_id };
+          });
+        }
         setDrafts(draftsMap);
       } catch (e) {
         console.error("Error fetching folders/drafts:", e);
