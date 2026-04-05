@@ -3,11 +3,17 @@ import AppLayout from "@/components/AppLayout";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Loader2, Music, Disc3, ListMusic, Upload, Trash2, Plus, Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Share2, Pin, PinOff } from "lucide-react";
+import { Loader2, Music, Disc3, ListMusic, Upload, Trash2, Plus, Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1, Share2, Pin, PinOff, Download, MoreVertical } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import type { AppLocale } from "@/i18n/translations";
 import { useSearchParams } from "react-router-dom";
 import BlurImage from "@/components/BlurImage";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Track = {
   id: string;
@@ -512,84 +518,86 @@ export default function MusicPage() {
       ) : (
         <>
           {tab === "tracks" && (
-            <div className="space-y-3">
+            <div className="space-y-1">
               {tracks.length === 0 ? (
                 <p className="text-muted-foreground text-sm">{t("music.empty")}</p>
               ) : (
                 tracks.map((tr) => (
                   <div
                     key={tr.id}
-                    className={`glass rounded-2xl p-4 flex flex-wrap items-center gap-4 ${
-                      currentTrackId === tr.id ? "border border-primary/30 bg-accent/20" : ""
+                    onClick={() => {
+                      if (currentTrackId === tr.id) togglePlay();
+                      else selectTrack(tr.id, true);
+                    }}
+                    className={`flex items-center gap-3 p-2 rounded-xl transition-colors cursor-pointer group hover:bg-accent/50 ${
+                      currentTrackId === tr.id ? "bg-accent/30" : ""
                     }`}
                   >
-                    {tr.cover_url ? (
-                      <BlurImage
-                        src={tr.cover_url}
-                        alt=""
-                        className="w-14 h-14 rounded-xl overflow-hidden"
-                        objectFit="cover"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-xl bg-muted flex items-center justify-center">
-                        <Music className="w-6 h-6 text-muted-foreground" />
-                      </div>
-                    )}
+                    <div className="relative shrink-0">
+                      {tr.cover_url ? (
+                        <BlurImage
+                          src={tr.cover_url}
+                          alt=""
+                          className="w-12 h-12 rounded-lg overflow-hidden"
+                          objectFit="cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                          <Music className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                      {currentTrackId === tr.id && isPlaying && (
+                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center rounded-lg">
+                          <div className="flex gap-0.5 items-end h-4">
+                            <div className="w-1 bg-white animate-[music-bar_0.6s_ease-in-out_infinite]" />
+                            <div className="w-1 bg-white animate-[music-bar_0.8s_ease-in-out_infinite]" />
+                            <div className="w-1 bg-white animate-[music-bar_0.7s_ease-in-out_infinite]" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{tr.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">{tr.artist || "—"}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        {tr.visibility === "PUBLIC" ? t("music.public") : t("music.private")} · id:{" "}
-                        <code className="select-all">{tr.id}</code>
-                        {pinnedTrackId === tr.id ? (
-                          <span className="ml-2 text-primary font-medium">Закреплён</span>
-                        ) : null}
+                      <p className={`text-sm font-medium truncate ${currentTrackId === tr.id ? "text-primary" : ""}`}>
+                        {tr.title}
                       </p>
+                      <p className="text-xs text-muted-foreground truncate">{tr.artist || "—"}</p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (currentTrackId === tr.id) togglePlay();
-                          else selectTrack(tr.id, true);
-                        }}
-                        className="p-2 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary"
-                        title="Play"
+                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <a
+                        href={tr.file_url}
+                        download={`${tr.artist || "Unknown"} - ${tr.title}.mp3`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-2 rounded-lg hover:bg-accent text-muted-foreground"
+                        title="Скачать"
                       >
-                        {currentTrackId === tr.id && isPlaying ? (
-                          <Pause className="w-4 h-4" />
-                        ) : (
-                          <Play className="w-4 h-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => shareTrack(tr)}
-                        className="p-2 rounded-xl hover:bg-accent text-muted-foreground"
-                        title="Share"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => togglePin(tr)}
-                        className="p-2 rounded-xl hover:bg-accent text-muted-foreground"
-                        title={pinnedTrackId === tr.id ? "Unpin" : "Pin"}
-                      >
-                        {pinnedTrackId === tr.id ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
-                      </button>
+                        <Download className="w-4 h-4 text-green-500" />
+                      </a>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <button className="p-2 rounded-lg hover:bg-accent text-muted-foreground">
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => shareTrack(tr)}>
+                            <Share2 className="w-4 h-4 mr-2" /> Поделиться
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => togglePin(tr)}>
+                            {pinnedTrackId === tr.id ? <PinOff className="w-4 h-4 mr-2" /> : <Pin className="w-4 h-4 mr-2" />}
+                            {pinnedTrackId === tr.id ? "Открепить" : "Закрепить в профиле"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => removeTrack(tr.id)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" /> Удалить
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeTrack(tr.id)}
-                      className="p-2 rounded-xl text-destructive hover:bg-destructive/10"
-                      title="Удалить трек"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 ))
               )}

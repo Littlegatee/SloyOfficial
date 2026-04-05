@@ -852,39 +852,17 @@ export default function MessagesPage() {
     fetchDialogs();
   }, [user, userIdFromUrl]);
 
-  const forwardPostDoneRef = useRef<string | null>(null);
   useEffect(() => {
     const fp = searchParams.get("forwardPost");
-    const uid = searchParams.get("userId");
-    if (!fp || !uid || !user || selectedUserId !== uid) return;
-    const key = `${uid}:${fp}`;
-    if (forwardPostDoneRef.current === key) return;
-    forwardPostDoneRef.current = key;
-    (async () => {
-      try {
-        const postUrl = `${window.location.origin}/p/${fp}`;
-        let snippet = "";
-        try {
-          const { data: post } = await api.get(`/posts/${fp}`);
-          snippet = (post?.content_text || "").slice(0, 400);
-        } catch {
-          /* ignore */
-        }
-        const text = `Пост в Sloy:\n${postUrl}${snippet ? `\n\n${snippet}` : ""}`;
-        await api.post("/messages", { recipient_id: uid, content_text: text });
-        toast.success("Пост отправлен");
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete("forwardPost");
-          return next;
-        });
-        fetchDialogsRef.current();
-      } catch (e: any) {
-        forwardPostDoneRef.current = null;
-        toast.error(e?.response?.data?.error || "Не удалось отправить пост");
-      }
-    })();
-  }, [selectedUserId, searchParams, user, setSearchParams]);
+    if (!fp) return;
+    // ... we handle this in FeedPage.tsx now by direct API call
+    // But if we came here from somewhere else, let's just clear it to be clean.
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("forwardPost");
+      return next;
+    });
+  }, [searchParams, setSearchParams]);
 
   async function openChat(userId: string, name: string, avatar?: string | null) {
     // Clear current messages immediately to avoid showing old chat content

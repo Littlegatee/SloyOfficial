@@ -138,6 +138,7 @@ export default function FeedPage() {
   const [likesPostId, setLikesPostId] = useState<string | null>(null);
   const [likesList, setLikesList] = useState<Array<{ user_id: string; user: { profile: { first_name: string; username: string; avatar_url: string | null } } }>>([]);
   const [likesLoading, setLikesLoading] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [isLiteMode, setIsLiteMode] = useState<boolean>(() => {
     const stored = localStorage.getItem("feed_lite_mode");
     if (stored === "1") return true;
@@ -402,11 +403,19 @@ export default function FeedPage() {
     await copyPostLink();
   };
 
-  const sendPostToFriend = (friendId: string) => {
+  const sendPostToFriend = async (friendId: string) => {
     if (!sharePost) return;
-    navigate(`/messages?userId=${friendId}&forwardPost=${sharePost.id}`);
-    setSharePost(null);
-    toast.success("Откройте чат — пост отправится");
+    try {
+      const url = getPostShareUrl(sharePost.id);
+      const text = `Пост в Sloy:\n${url}\n\n${(sharePost.content_text || "").slice(0, 400)}`;
+      await api.post("/messages", { recipient_id: friendId, content_text: text });
+      toast.success("Пост отправлен в личные сообщения");
+      navigate(`/messages?userId=${friendId}`);
+    } catch (error) {
+      toast.error("Не удалось отправить пост");
+    } finally {
+      setSharePost(null);
+    }
   };
 
   const openLikesList = async (postId: string) => {
@@ -690,7 +699,10 @@ export default function FeedPage() {
 
                 {post.media_url && (
                   <div className="px-4 pb-2">
-                    <div className="relative rounded-lg overflow-hidden border border-border">
+                    <div 
+                      className="relative rounded-lg overflow-hidden border border-border cursor-zoom-in"
+                      onClick={() => setZoomedImage(post.media_url)}
+                    >
                       <BlurImage
                         src={post.media_url}
                         className="w-full max-h-[500px] object-cover"
@@ -722,10 +734,7 @@ export default function FeedPage() {
                   </div>
 
                   <button 
-                    onClick={() => {
-                      setSharePost(post);
-                      // fetch friends logic
-                    }}
+                    onClick={() => openShare(post)}
                     className="text-muted-foreground hover:text-primary transition-colors"
                   >
                     <Share2 className="w-5 h-5" />
@@ -759,6 +768,82 @@ export default function FeedPage() {
           )}
         </div>
       </div>
+
+      {/* Lightbox */}
+      <Dialog open={!!zoomedImage} onOpenChange={(open) => !open && setZoomedImage(null)}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 overflow-hidden border-none bg-black/90">
+          <div className="relative w-full h-full flex items-center justify-center">
+            {zoomedImage && (
+              <img
+                src={zoomedImage}
+                className="max-w-full max-h-[90vh] object-contain"
+                alt="Full screen"
+              />
+            )}
+            <button
+              onClick={() => setZoomedImage(null)}
+              className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={!!sharePost} onOpenChange={(open) => !open && setSharePost(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>Поделиться постом</DialogTitle>
+          <DialogDescription>
+            Выберите друга для отправки или скопируйте ссылку.
+          </DialogDescription>
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <button
+              onClick={copyPostLink}
+              className="flex items-center justify-center gap-2 p-3 rounded-xl glass hover:bg-accent transition-colors text-sm"
+            >
+              <Link2 className="w-4 h-4" /> Копировать ссылку
+            </button>
+            <button
+              onClick={sharePostNatively}
+              className="flex items-center justify-center gap-2 p-3 rounded-xl glass hover:bg-accent transition-colors text-sm"
+            >
+              <Share2 className="w-4 h-4" /> Поделиться...
+            </button>
+          </div>
+          
+          <div className="mt-6">
+            <p className="text-xs font-bold text-muted-foreground uppercase mb-3">Отправить друзьям</p>
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+              {friendsForShare.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">Нет доступных друзей</p>
+              ) : (
+                friendsForShare.map((f) => (
+                  <button
+                    key={f.friend_id}
+                    onClick={() => sendPostToFriend(f.friend_id)}
+                    className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-muted transition-colors text-left"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-muted overflow-hidden shrink-0">
+                      {f.friend_profile?.avatar_url ? (
+                        <img src={f.friend_profile.avatar_url} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-sm font-bold">
+                          {f.friend_profile?.first_name?.charAt(0) || "?"}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{f.friend_profile?.first_name}</p>
+                      <p className="text-xs text-muted-foreground truncate">@{f.friend_profile?.username}</p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

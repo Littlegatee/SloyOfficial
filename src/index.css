@@ -103,8 +103,12 @@
   }
 
   .btn-gradient {
-    background: var(--sloy-gradient);
-    @apply text-white shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200;
+    @apply bg-[var(--sloy-gradient)] text-white shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all;
+  }
+
+  @keyframes music-bar {
+    0%, 100% { height: 4px; }
+    50% { height: 16px; }
   }
 
   .text-gradient {
