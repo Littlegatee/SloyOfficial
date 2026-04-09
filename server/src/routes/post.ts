@@ -25,6 +25,14 @@ function sanitizePostsForClient(posts: any[], viewerId: string) {
     const likes = p.likes;
     const liked_by_me = Array.isArray(likes) && likes.some((l: any) => l.user_id === viewerId);
     const { likes: _drop, ...rest } = p;
+    
+    // Handle repost sanitization if needed
+    if (rest.original_post) {
+      const origLikes = rest.original_post.likes || [];
+      rest.original_post.liked_by_me = Array.isArray(origLikes) && origLikes.some((l: any) => l.user_id === viewerId);
+      delete rest.original_post.likes;
+    }
+    
     return { ...rest, liked_by_me };
   });
 }
@@ -61,12 +69,22 @@ router.get('/', authenticateToken, async (req: any, res) => {
           }
         }
       }
-      const raw = await prisma.post.findMany({
+      const raw = await (prisma as any).post.findMany({
         where: { user_id: targetId, author_type: 'USER' },
         include: {
           user: { include: { profile: true } },
           community: true,
           likes: true,
+          tags: { include: { tag: true } },
+          poll: { include: { votes: true } },
+          original_post: {
+            include: {
+              user: { include: { profile: true } },
+              community: true,
+              tags: { include: { tag: true } },
+              poll: { include: { votes: true } }
+            }
+          }
         },
         orderBy: { created_at: 'desc' },
         take: 80,
@@ -74,16 +92,32 @@ router.get('/', authenticateToken, async (req: any, res) => {
       return res.json(sanitizePostsForClient(raw, userId));
     }
 
-    let posts = await prisma.post.findMany({
+    let posts = await (prisma as any).post.findMany({
       include: {
         user: {
           include: { profile: true },
         },
-        community: true,
+        community: {
+          include: {
+            members: {
+              where: { user_id: userId }
+            }
+          }
+        },
         likes: true,
+        tags: { include: { tag: true } },
+        poll: { include: { votes: true } },
+        original_post: {
+          include: {
+            user: { include: { profile: true } },
+            community: true,
+            tags: { include: { tag: true } },
+            poll: { include: { votes: true } }
+          }
+        }
       },
       orderBy: { created_at: 'desc' },
-      take: 80,
+      take: 100,
     });
 
     const friends = await prisma.friendship.findMany({
@@ -97,14 +131,18 @@ router.get('/', authenticateToken, async (req: any, res) => {
 
     if (recommendation_type === 'friends') {
       // Show only friends' personal posts
-      posts = posts.filter(p => p.author_type === 'USER' && friendIds.has(p.user_id));
+      posts = posts.filter((p: any) => p.author_type === 'USER' && friendIds.has(p.user_id));
     } else {
       // Main feed: Friends, Subscribed Communities, and Recommendations
-      const myCommunities = await prisma.communityMember.findMany({
+      const myCommunities = await (prisma as any).communityMember.findMany({
         where: { user_id: userId },
-        select: { community_id: true }
+        include: { community: true }
       });
-      const myCommunityIds = new Set(myCommunities.map(c => c.community_id));
+      const myCommunityIds = new Set(myCommunities.map((c: any) => c.community_id));
+      const myCategories = new Set(myCommunities.map((c: any) => c.community.category).filter(Boolean));
+
+      const myProfile = await (prisma as any).profile.findUnique({ where: { user_id: userId } });
+      const myInterests = (myProfile?.interests || "").toLowerCase().split(/[\s,]+/).filter(Boolean);
 
       const friendLikes = await prisma.like.findMany({
         where: { user_id: { in: Array.from(friendIds) } },
@@ -115,9 +153,12 @@ router.get('/', authenticateToken, async (req: any, res) => {
       // Calculate deterministic score for recommendation:
       // - prioritize friends + subscribed communities
       // - boost posts that friends liked
+      // - boost promoted posts
+      // - match with user interests (from profile)
+      // - match with community categories user follows
       // - decay by age (freshness)
       // - small stable per-user jitter for discovery without "jumping"
-      posts.forEach(p => {
+      posts.forEach((p: any) => {
         let score = 0;
 
         const isFriendUserPost = p.author_type === 'USER' && friendIds.has(p.user_id);
@@ -125,25 +166,40 @@ router.get('/', authenticateToken, async (req: any, res) => {
           p.author_type === 'COMMUNITY' && !!p.community_id && myCommunityIds.has(p.community_id);
         const isLikedByFriends = likedPostIds.has(p.id);
 
-        if (isFriendUserPost) score += 120;
-        if (isSubscribedCommunityPost) score += 90;
-        if (isLikedByFriends) score += 45;
+        if (isFriendUserPost) score += 150;
+        if (isSubscribedCommunityPost) score += 120;
+        if (isLikedByFriends) score += 60;
+        
+        // Boost promoted posts
+        if (p.is_promoted) score += 100;
 
-        // Popularity signal (very light, to avoid "rich get richer")
+        // Interest matching
+        const postContent = (p.content_text || "").toLowerCase();
+        myInterests.forEach((interest: string) => {
+          if (postContent.includes(interest)) score += 30;
+        });
+
+        // Category matching
+        if (p.author_type === 'COMMUNITY' && p.community?.category && myCategories.has(p.community.category)) {
+          score += 40;
+        }
+
+        // Popularity signal
         const popularity =
-          Math.min((p.likes_count || 0), 50) * 0.3 +
-          Math.min((p.comments_count || 0), 30) * 0.5;
+          Math.min((p.likes_count || 0), 100) * 0.8 +
+          Math.min((p.comments_count || 0), 50) * 1.2 +
+          Math.min((p.views_count || 0), 500) * 0.2;
         score += popularity;
 
-        // Freshness decay: ~24h half-life-ish (tunable)
+        // Freshness decay: ~12h half-life (more aggressive decay for discovery)
         const ageHours = hoursSince(new Date(p.created_at as any));
-        const freshness = Math.exp(-ageHours / 24);
-        score += freshness * 60;
+        const freshness = Math.exp(-ageHours / 12);
+        score += freshness * 100;
 
-        // Stable discovery jitter (0..12)
-        score += stableHashToUnitInterval(`${userId}:${p.id}`) * 12;
+        // Stable discovery jitter (0..20)
+        score += stableHashToUnitInterval(`${userId}:${p.id}`) * 20;
 
-        (p as any).score = score;
+        p.score = score;
       });
 
       // Sort by score (desc). Tie-break by created_at desc for stability.
@@ -162,19 +218,19 @@ router.get('/', authenticateToken, async (req: any, res) => {
   }
 });
 
-// Create post
+// Create post or repost or poll
 router.post('/', authenticateToken, async (req: any, res) => {
-  const { content_text, media_type, media_url, author_type, community_id } = req.body;
+  const { content_text, media_type, media_url, author_type, community_id, original_post_id, is_promoted, poll, tags } = req.body;
   const userId = req.user.id;
   
   try {
     const normalizedAuthorType = (author_type || 'USER') as 'USER' | 'COMMUNITY';
 
+    // ... (rest of the authorization check same as before)
     if (normalizedAuthorType === 'COMMUNITY' && !community_id) {
       return res.status(400).json({ error: "Для поста от имени сообщества нужен community_id" });
     }
 
-    // If posting as community, verify permissions
     if (normalizedAuthorType === 'COMMUNITY' && community_id) {
       const member = await withDbReconnectRetry(() => prisma.communityMember.findUnique({
         where: {
@@ -196,19 +252,58 @@ router.post('/', authenticateToken, async (req: any, res) => {
       }
     }
 
-    const post = await withDbReconnectRetry(() => prisma.post.create({
+    // Process tags
+    let tagIds: string[] = [];
+    if (tags && Array.isArray(tags)) {
+      for (const tName of tags) {
+        const cleanName = tName.replace('#', '').trim();
+        if (cleanName) {
+          const tagObj = await (prisma as any).tag.upsert({
+            where: { name: cleanName },
+            update: {},
+            create: { name: cleanName }
+          });
+          tagIds.push(tagObj.id);
+        }
+      }
+    }
+
+    const post = await withDbReconnectRetry(() => (prisma as any).post.create({
       data: {
         user_id: userId,
         content_text,
         media_type,
         media_url,
         author_type: normalizedAuthorType,
-        community_id: normalizedAuthorType === 'COMMUNITY' ? (community_id as string) : null
+        community_id: normalizedAuthorType === 'COMMUNITY' ? (community_id as string) : null,
+        is_repost: !!original_post_id,
+        original_post_id: original_post_id || null,
+        is_promoted: !!is_promoted,
+        tags: {
+          create: tagIds.map(tid => ({ tag_id: tid }))
+        },
+        poll: poll && poll.question && Array.isArray(poll.options) ? {
+          create: {
+            question: poll.question,
+            options: poll.options,
+            multiple: !!poll.multiple
+          }
+        } : undefined
       },
       include: {
         user: { include: { profile: true } },
         community: true,
-        likes: true
+        likes: true,
+        tags: { include: { tag: true } },
+        poll: { include: { votes: true } },
+        original_post: {
+          include: {
+            user: { include: { profile: true } },
+            community: true,
+            tags: { include: { tag: true } },
+            poll: { include: { votes: true } }
+          }
+        }
       }
     }));
 
@@ -217,6 +312,50 @@ router.post('/', authenticateToken, async (req: any, res) => {
     res.json(sanitized);
   } catch (error: any) {
     console.error("POST /posts error:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Vote in a poll
+router.post('/:id/poll/vote', authenticateToken, async (req: any, res) => {
+  const userId = req.user.id;
+  const postId = req.params.id;
+  const { option_id } = req.body;
+
+  try {
+    const postPoll = await (prisma as any).postPoll.findUnique({
+      where: { post_id: postId }
+    });
+
+    if (!postPoll) return res.status(404).json({ error: "Опрос не найден" });
+    if (postPoll.closed) return res.status(400).json({ error: "Опрос закрыт" });
+
+    await (prisma as any).postPollVote.upsert({
+      where: {
+        poll_id_user_id: { poll_id: postPoll.id, user_id: userId }
+      },
+      update: { option_id: String(option_id) },
+      create: {
+        poll_id: postPoll.id,
+        user_id: userId,
+        option_id: String(option_id)
+      }
+    });
+
+    // Fetch updated post with poll and votes
+    const updatedPost = await (prisma as any).post.findUnique({
+      where: { id: postId },
+      include: {
+        user: { include: { profile: true } },
+        community: true,
+        likes: true,
+        tags: { include: { tag: true } },
+        poll: { include: { votes: true } }
+      }
+    });
+
+    res.json(sanitizePostsForClient([updatedPost], userId)[0]);
+  } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
 });
@@ -235,18 +374,54 @@ router.get('/:id/likes', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Get a single post and increment view count
 router.get('/:id', authenticateToken, async (req: any, res) => {
+  const userId = req.user.id;
+  const postId = req.params.id;
   try {
-    const post = await prisma.post.findUnique({
-      where: { id: req.params.id },
+    const post = await (prisma as any).post.findUnique({
+      where: { id: postId },
       include: {
         user: { include: { profile: true } },
         community: true,
         likes: true,
+        tags: { include: { tag: true } },
+        poll: { include: { votes: true } },
+        original_post: {
+          include: {
+            user: { include: { profile: true } },
+            community: true,
+            tags: { include: { tag: true } },
+            poll: { include: { votes: true } }
+          }
+        }
       },
     });
     if (!post) return res.status(404).json({ error: 'Not found' });
-    res.json(sanitizePostsForClient([post], req.user.id)[0]);
+
+    // Try to record a view
+    try {
+      const existingView = await (prisma as any).postView.findUnique({
+        where: {
+          post_id_user_id: { post_id: postId, user_id: userId }
+        }
+      });
+
+      if (!existingView) {
+        await (prisma as any).postView.create({
+          data: { post_id: postId, user_id: userId }
+        });
+        await (prisma as any).post.update({
+          where: { id: postId },
+          data: { views_count: { increment: 1 } }
+        });
+        (post as any).views_count += 1;
+      }
+    } catch (vErr) {
+      // Ignore view recording errors
+    }
+
+    res.json(sanitizePostsForClient([post], userId)[0]);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
@@ -416,6 +591,32 @@ router.post('/comments/:id/like', authenticateToken, async (req: any, res) => {
     }
   } catch (error: any) {
     console.error("Comment like error:", error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Author stats for a specific post
+router.get('/:id/stats', authenticateToken, async (req: any, res) => {
+  const userId = req.user.id;
+  const postId = req.params.id;
+
+  try {
+    const post = await prisma.post.findUnique({
+      where: { id: postId }
+    });
+
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (post.user_id !== userId) return res.status(403).json({ error: 'Only author can see stats' });
+
+    // In a real app, we would have a more complex stats aggregation
+    // For now, we return views, likes, and comments count
+    res.json({
+      views: (post as any).views_count || 0,
+      likes: post.likes_count,
+      comments: post.comments_count,
+      created_at: post.created_at
+    });
+  } catch (error: any) {
     res.status(400).json({ error: error.message });
   }
 });

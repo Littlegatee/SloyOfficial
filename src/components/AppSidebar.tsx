@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music, Menu as MenuIcon, ChevronLeft } from "lucide-react";
+import { Home, User, Users, MessageCircle, Settings, LogOut, Moon, Sun, Layers, Music, Menu as MenuIcon, ChevronLeft, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
 import { hasActivePushSubscription } from "@/lib/pushNotifications";
@@ -39,6 +39,13 @@ export default function AppSidebar({ isCollapsed, onToggle }: { isCollapsed?: bo
   const location = useLocation();
   const navigate = useNavigate();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      api.get("/admin/me").then(res => setIsAdmin(res.data.isAdmin)).catch(() => setIsAdmin(false));
+    }
+  }, [user]);
 
   const toggleTheme = () => {
     const next = !isDark;
@@ -139,6 +146,20 @@ export default function AppSidebar({ isCollapsed, onToggle }: { isCollapsed?: bo
               </NavLink>
             );
           })}
+
+          {isAdmin && (
+            <NavLink
+              to="/admin"
+              className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ${
+                location.pathname === '/admin'
+                  ? "btn-gradient shadow-none"
+                  : "text-primary hover:bg-primary/10"
+              }`}
+            >
+              <ShieldCheck className="w-[18px] h-[18px]" />
+              Админ-панель
+            </NavLink>
+          )}
         </nav>
 
         {/* Theme toggle */}
@@ -219,16 +240,22 @@ export default function AppSidebar({ isCollapsed, onToggle }: { isCollapsed?: bo
                   <NavLink
                     key={to}
                     to={to}
-                    onClick={() => {
-                      // Sheet closes automatically on navigation if not controlled,
-                      // but some Sheet implementations need explicit close.
-                    }}
                     className="flex items-center gap-4 px-4 py-4 rounded-2xl bg-accent/30 hover:bg-accent transition-colors"
                   >
                     <Icon className="w-5 h-5 text-primary" />
                     <span className="font-medium">{t(labelKey)}</span>
                   </NavLink>
                 ))}
+
+                {isAdmin && (
+                  <NavLink
+                    to="/admin"
+                    className="flex items-center gap-4 px-4 py-4 rounded-2xl bg-primary/10 hover:bg-primary/20 transition-colors"
+                  >
+                    <ShieldCheck className="w-5 h-5 text-primary" />
+                    <span className="font-medium text-primary">Админ-панель</span>
+                  </NavLink>
+                )}
                 
                 <div className="h-px bg-border/50 my-2" />
                 

@@ -72,6 +72,10 @@ const { default: communityRoutes } = await import('./routes/community.js');
 const { default: musicRoutes } = await import('./routes/music.js');
 const { default: adminRoutes } = await import('./routes/admin.js');
 const { default: pushRoutes } = await import('./routes/push.js');
+const { default: bookmarkRoutes } = await import('./routes/bookmark.js');
+const { default: tagRoutes } = await import('./routes/tag.js');
+const { default: orderRoutes } = await import('./routes/order.js');
+const { default: reviewRoutes } = await import('./routes/review.js');
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -83,6 +87,10 @@ app.use('/api/communities', communityRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/push', pushRoutes);
+app.use('/api/bookmarks', bookmarkRoutes);
+app.use('/api/tags', tagRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Health Check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

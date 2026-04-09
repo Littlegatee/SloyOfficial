@@ -17,21 +17,27 @@ function sanitizePostsForClient(posts: any[], viewerId: string) {
 // IMPORTANT: must be defined before '/:id' routes
 router.get('/explore/all', authenticateToken, async (req: any, res) => {
   const userId = req.user.id;
+  const { category } = req.query;
   try {
-    const communities = await prisma.community.findMany({
-      where: {
-        NOT: {
-          members: {
-            some: {
-              user_id: userId
-            }
+    const where: any = {
+      NOT: {
+        members: {
+          some: {
+            user_id: userId
           }
         }
-      },
+      }
+    };
+    if (category) {
+      where.category = category;
+    }
+
+    const communities = await (prisma as any).community.findMany({
+      where,
       include: {
         _count: { select: { members: true } }
       },
-      take: 20
+      take: 40
     });
     res.json(communities);
   } catch (error: any) {
@@ -61,17 +67,18 @@ router.get('/', authenticateToken, async (req: any, res) => {
 
 // Create community
 router.post('/', authenticateToken, async (req: any, res) => {
-  const { name, description, type, avatar_url, cover_url } = req.body;
+  const { name, description, type, avatar_url, cover_url, category } = req.body;
   const userId = req.user.id;
 
   try {
-    const community = await prisma.community.create({
+    const community = await (prisma as any).community.create({
       data: {
         name,
         description,
         type,
         avatar_url,
         cover_url,
+        category,
         members: {
           create: {
             user_id: userId,
@@ -266,6 +273,53 @@ router.get('/:id/posts', authenticateToken, async (req: any, res) => {
       orderBy: { created_at: 'desc' }
     });
     res.json(sanitizePostsForClient(posts, req.user.id));
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get community products
+router.get('/:id/products', authenticateToken, async (req: any, res) => {
+  try {
+    const products = await (prisma as any).communityProduct.findMany({
+      where: { community_id: req.params.id },
+      orderBy: { created_at: 'desc' }
+    });
+    res.json(products);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Create community product
+router.post('/:id/products', authenticateToken, async (req: any, res) => {
+  const { title, description, price, currency, image_url, category } = req.body;
+  const userId = req.user.id;
+  const communityId = req.params.id;
+
+  try {
+    const member = await prisma.communityMember.findUnique({
+      where: {
+        community_id_user_id: { community_id: communityId, user_id: userId }
+      }
+    });
+
+    if (!member || (member.role !== 'OWNER' && member.role !== 'ADMIN')) {
+      return res.status(403).json({ error: "Нет прав для добавления товаров" });
+    }
+
+    const product = await (prisma as any).communityProduct.create({
+      data: {
+        community_id: communityId,
+        title,
+        description,
+        price: parseFloat(price) || 0,
+        currency: currency || 'RUB',
+        image_url,
+        category
+      }
+    });
+    res.json(product);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

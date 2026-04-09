@@ -12,6 +12,8 @@ import SettingsPage from "./pages/SettingsPage";
 import CommunitiesPage from "./pages/CommunitiesPage";
 import CommunityProfilePage from "./pages/CommunityProfilePage";
 import CommunitySettingsPage from "./pages/CommunitySettingsPage";
+import AdminPage from "./pages/AdminPage";
+import BookmarksPage from "./pages/BookmarksPage";
 import PostSharePage from "./pages/PostSharePage";
 import MusicPage from "./pages/MusicPage";
 import NotFound from "./pages/NotFound";
@@ -73,6 +75,8 @@ function AppRoutes() {
       <Route path="/communities" element={<ProtectedRoute><CommunitiesPage /></ProtectedRoute>} />
       <Route path="/communities/:id" element={<ProtectedRoute><CommunityProfilePage /></ProtectedRoute>} />
       <Route path="/communities/:id/settings" element={<ProtectedRoute><CommunitySettingsPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+      <Route path="/bookmarks" element={<ProtectedRoute><BookmarksPage /></ProtectedRoute>} />
       <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />

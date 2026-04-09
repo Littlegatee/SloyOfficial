@@ -48,6 +48,9 @@ enum CommunityRole {
   MODERATOR
   ADMIN
   OWNER
+  PRODUCT_EDITOR
+  CHAT_MODERATOR
+  ANALYST
 }
 
 enum ProfileVisibility {
@@ -70,13 +73,21 @@ model User {
   email     String   @unique
   password  String
   createdAt DateTime @default(now())
+  is_admin  Boolean  @default(false)
 
   // Relations
   profile      Profile?
   posts        Post[]
   comments     Comment[]
-  likes        Like[]           // Лайки на посты
-  commentLikes CommentLike[]    // Лайки на комментарии
+  likes          Like[]           // Лайки на посты
+  commentLikes   CommentLike[]    // Лайки на комментарии
+  postViews      PostView[]       // Просмотры постов
+  bookmarks      Bookmark[]
+  postPollVotes  PostPollVote[]
+  pollVotes       PollVote[]
+  ratings        CommunityRating[]
+  orders         Order[]
+  productReviews ProductReview[]
 
   // Messages
   sentMessages     Message[] @relation("SentMessages")
@@ -108,10 +119,9 @@ model User {
   dialogArchives   DialogArchive[]
   pushSubscriptions PushSubscription[]
   
-  // New features
+// New features
   chatFolders     ChatFolder[]
   chatDrafts      ChatDraft[]
-  pollVotes       PollVote[]
   chatConfigs     UserChatConfig[]
 
   @@index([email])
@@ -181,11 +191,21 @@ model Post {
   
   likes_count    Int       @default(0)
   comments_count Int       @default(0)
-  is_edited      Boolean   @default(false) // Флаг: был ли пост изменен
+  views_count    Int       @default(0)
+  is_edited      Boolean   @default(false)
   
   author_type    String    @default("USER") // "USER" | "COMMUNITY"
   community_id   String?
   community      Community? @relation(fields: [community_id], references: [id], onDelete: Cascade)
+
+  // Reposts
+  is_repost        Boolean   @default(false)
+  original_post_id String?
+  original_post    Post?     @relation("Reposts", fields: [original_post_id], references: [id], onDelete: SetNull)
+  reposts          Post[]    @relation("Reposts")
+
+  // Promotion
+  is_promoted      Boolean   @default(false)
 
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
@@ -193,9 +213,90 @@ model Post {
   // Relations
   comments       Comment[]
   likes          Like[]
+  views          PostView[]
+  bookmarks      Bookmark[]
+  tags           PostTag[]
+  poll           PostPoll?
 
   @@index([user_id])
   @@index([created_at])
+  @@index([original_post_id])
+}
+
+model Tag {
+  id         String    @id @default(uuid())
+  name       String    @unique
+  posts      PostTag[]
+  created_at DateTime  @default(now())
+
+  @@index([name])
+}
+
+model PostTag {
+  post_id String
+  post    Post   @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  tag_id  String
+  tag     Tag    @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([post_id, tag_id])
+  @@index([post_id])
+  @@index([tag_id])
+}
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  post_id    String?
+  post       Post?    @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  product_id String?
+  product    CommunityProduct? @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  community_id String?
+  community  Community? @relation(fields: [community_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([user_id, post_id])
+  @@unique([user_id, product_id])
+  @@unique([user_id, community_id])
+  @@index([user_id])
+}
+
+model PostPoll {
+  id         String       @id @default(uuid())
+  post_id    String       @unique
+  post       Post         @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  question   String
+  options    Json         // [{ id: string, text: string }]
+  multiple   Boolean      @default(false)
+  closed     Boolean      @default(false)
+  votes      PostPollVote[]
+}
+
+model PostPollVote {
+  id         String   @id @default(uuid())
+  poll_id    String
+  poll       PostPoll @relation(fields: [poll_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  option_id  String
+  created_at DateTime @default(now())
+
+  @@unique([poll_id, user_id])
+  @@index([poll_id])
+  @@index([user_id])
+}
+
+model PostView {
+  id         String   @id @default(uuid())
+  post_id    String
+  post       Post     @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  created_at DateTime @default(now())
+
+  @@unique([post_id, user_id])
+  @@index([post_id])
+  @@index([user_id])
 }
 
 model Comment {
@@ -513,12 +614,106 @@ model Community {
   avatar_url  String?
   cover_url   String?
   type        CommunityType
+  category    String?       // New field for categories
+  is_verified Boolean       @default(false) // Verification for communities
   
   created_at  DateTime      @default(now())
   updated_at  DateTime      @updatedAt
 
   members     CommunityMember[]
   posts       Post[]
+  products    CommunityProduct[]
+  bookmarks   Bookmark[]
+  ratings     CommunityRating[]
+  orders      Order[]
+
+  @@index([category])
+}
+
+model CommunityRating {
+  id           String    @id @default(uuid())
+  community_id String
+  community    Community @relation(fields: [community_id], references: [id], onDelete: Cascade)
+  user_id      String
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  rating       Int       // 1-5
+  review_text  String?   @db.Text
+  created_at   DateTime  @default(now())
+
+  @@unique([community_id, user_id])
+  @@index([community_id])
+}
+
+model CommunityProduct {
+  id           String    @id @default(uuid())
+  community_id String
+  community    Community @relation(fields: [community_id], references: [id], onDelete: Cascade)
+  
+  title        String
+  description  String?   @db.Text
+  price        Float?
+  currency     String    @default("RUB")
+  image_url    String?
+  category     String?
+  
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  bookmarks    Bookmark[]
+  reviews      ProductReview[]
+  orders       Order[]
+
+  @@index([community_id])
+  @@index([category])
+}
+
+model ProductReview {
+  id          String           @id @default(uuid())
+  product_id  String
+  product     CommunityProduct @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  user_id     String
+  user        User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  
+  rating      Int              // 1-5
+  text        String?          @db.Text
+  created_at  DateTime         @default(now())
+
+  @@unique([product_id, user_id])
+  @@index([product_id])
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  id           String           @id @default(uuid())
+  user_id      String
+  user         User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  community_id String
+  community    Community        @relation(fields: [community_id], references: [id], onDelete: Cascade)
+  product_id   String
+  product      CommunityProduct @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  
+  status       OrderStatus      @default(PENDING)
+  quantity     Int              @default(1)
+  total_price  Float
+  currency     String           @default("RUB")
+  
+  customer_note String?         @db.Text
+  admin_note    String?         @db.Text
+  
+  created_at   DateTime         @default(now())
+  updated_at   DateTime         @updatedAt
+
+  @@index([user_id])
+  @@index([community_id])
+  @@index([product_id])
 }
 
 model CommunityMember {
