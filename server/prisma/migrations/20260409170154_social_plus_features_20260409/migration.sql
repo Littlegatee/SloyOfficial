@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "Tag" (
+CREATE TABLE IF NOT EXISTS "Tag" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -8,7 +8,7 @@ CREATE TABLE "Tag" (
 );
 
 -- CreateTable
-CREATE TABLE "PostTag" (
+CREATE TABLE IF NOT EXISTS "PostTag" (
     "post_id" TEXT NOT NULL,
     "tag_id" TEXT NOT NULL,
 
@@ -16,7 +16,7 @@ CREATE TABLE "PostTag" (
 );
 
 -- CreateTable
-CREATE TABLE "Bookmark" (
+CREATE TABLE IF NOT EXISTS "Bookmark" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "post_id" TEXT,
@@ -28,7 +28,7 @@ CREATE TABLE "Bookmark" (
 );
 
 -- CreateTable
-CREATE TABLE "PostPoll" (
+CREATE TABLE IF NOT EXISTS "PostPoll" (
     "id" TEXT NOT NULL,
     "post_id" TEXT NOT NULL,
     "question" TEXT NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE "PostPoll" (
 );
 
 -- CreateTable
-CREATE TABLE "PostPollVote" (
+CREATE TABLE IF NOT EXISTS "PostPollVote" (
     "id" TEXT NOT NULL,
     "poll_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -51,40 +51,40 @@ CREATE TABLE "PostPollVote" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Tag_name_key" ON "Tag"("name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Tag_name_key" ON "Tag"("name");
 
 -- CreateIndex
-CREATE INDEX "Tag_name_idx" ON "Tag"("name");
+CREATE INDEX IF NOT EXISTS "Tag_name_idx" ON "Tag"("name");
 
 -- CreateIndex
-CREATE INDEX "PostTag_post_id_idx" ON "PostTag"("post_id");
+CREATE INDEX IF NOT EXISTS "PostTag_post_id_idx" ON "PostTag"("post_id");
 
 -- CreateIndex
-CREATE INDEX "PostTag_tag_id_idx" ON "PostTag"("tag_id");
+CREATE INDEX IF NOT EXISTS "PostTag_tag_id_idx" ON "PostTag"("tag_id");
 
 -- CreateIndex
-CREATE INDEX "Bookmark_user_id_idx" ON "Bookmark"("user_id");
+CREATE INDEX IF NOT EXISTS "Bookmark_user_id_idx" ON "Bookmark"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Bookmark_user_id_post_id_key" ON "Bookmark"("user_id", "post_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Bookmark_user_id_post_id_key" ON "Bookmark"("user_id", "post_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Bookmark_user_id_product_id_key" ON "Bookmark"("user_id", "product_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Bookmark_user_id_product_id_key" ON "Bookmark"("user_id", "product_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Bookmark_user_id_community_id_key" ON "Bookmark"("user_id", "community_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Bookmark_user_id_community_id_key" ON "Bookmark"("user_id", "community_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PostPoll_post_id_key" ON "PostPoll"("post_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "PostPoll_post_id_key" ON "PostPoll"("post_id");
 
 -- CreateIndex
-CREATE INDEX "PostPollVote_poll_id_idx" ON "PostPollVote"("poll_id");
+CREATE INDEX IF NOT EXISTS "PostPollVote_poll_id_idx" ON "PostPollVote"("poll_id");
 
 -- CreateIndex
-CREATE INDEX "PostPollVote_user_id_idx" ON "PostPollVote"("user_id");
+CREATE INDEX IF NOT EXISTS "PostPollVote_user_id_idx" ON "PostPollVote"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PostPollVote_poll_id_user_id_key" ON "PostPollVote"("poll_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "PostPollVote_poll_id_user_id_key" ON "PostPollVote"("poll_id", "user_id");
 
 -- AddForeignKey
 ALTER TABLE "PostTag" ADD CONSTRAINT "PostTag_post_id_fkey" FOREIGN KEY ("post_id") REFERENCES "Post"("id") ON DELETE CASCADE ON UPDATE CASCADE;

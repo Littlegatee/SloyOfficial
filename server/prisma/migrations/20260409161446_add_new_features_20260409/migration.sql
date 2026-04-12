@@ -1,28 +1,36 @@
 -- AlterEnum
-ALTER TYPE "CommunityRole" ADD VALUE 'MODERATOR';
+DO $$ BEGIN
+    ALTER TYPE "CommunityRole" ADD VALUE 'MODERATOR';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AlterEnum
-ALTER TYPE "MessageType" ADD VALUE 'POLL';
+DO $$ BEGIN
+    ALTER TYPE "MessageType" ADD VALUE 'POLL';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- AlterTable
-ALTER TABLE "Community" ADD COLUMN     "category" TEXT,
-ADD COLUMN     "is_verified" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Community" ADD COLUMN IF NOT EXISTS "category" TEXT,
+ADD COLUMN IF NOT EXISTS "is_verified" BOOLEAN NOT NULL DEFAULT false;
 
 -- AlterTable
-ALTER TABLE "Message" ADD COLUMN     "album_id" TEXT,
-ADD COLUMN     "link_preview" JSONB;
+ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "album_id" TEXT,
+ADD COLUMN IF NOT EXISTS "link_preview" JSONB;
 
 -- AlterTable
-ALTER TABLE "Post" ADD COLUMN     "is_promoted" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "is_repost" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "original_post_id" TEXT,
-ADD COLUMN     "views_count" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "is_promoted" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "is_repost" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "original_post_id" TEXT,
+ADD COLUMN IF NOT EXISTS "views_count" INTEGER NOT NULL DEFAULT 0;
 
 -- AlterTable
-ALTER TABLE "User" ADD COLUMN     "is_admin" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "is_admin" BOOLEAN NOT NULL DEFAULT false;
 
 -- CreateTable
-CREATE TABLE "PushSubscription" (
+CREATE TABLE IF NOT EXISTS "PushSubscription" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "endpoint" TEXT NOT NULL,
@@ -36,7 +44,7 @@ CREATE TABLE "PushSubscription" (
 );
 
 -- CreateTable
-CREATE TABLE "PostView" (
+CREATE TABLE IF NOT EXISTS "PostView" (
     "id" TEXT NOT NULL,
     "post_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -46,7 +54,7 @@ CREATE TABLE "PostView" (
 );
 
 -- CreateTable
-CREATE TABLE "ChatFolder" (
+CREATE TABLE IF NOT EXISTS "ChatFolder" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -59,7 +67,7 @@ CREATE TABLE "ChatFolder" (
 );
 
 -- CreateTable
-CREATE TABLE "ChatDraft" (
+CREATE TABLE IF NOT EXISTS "ChatDraft" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "recipient_id" TEXT NOT NULL,
@@ -71,7 +79,7 @@ CREATE TABLE "ChatDraft" (
 );
 
 -- CreateTable
-CREATE TABLE "Poll" (
+CREATE TABLE IF NOT EXISTS "Poll" (
     "id" TEXT NOT NULL,
     "message_id" TEXT NOT NULL,
     "question" TEXT NOT NULL,
@@ -85,7 +93,7 @@ CREATE TABLE "Poll" (
 );
 
 -- CreateTable
-CREATE TABLE "PollVote" (
+CREATE TABLE IF NOT EXISTS "PollVote" (
     "id" TEXT NOT NULL,
     "poll_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -96,7 +104,7 @@ CREATE TABLE "PollVote" (
 );
 
 -- CreateTable
-CREATE TABLE "StickerPack" (
+CREATE TABLE IF NOT EXISTS "StickerPack" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -107,7 +115,7 @@ CREATE TABLE "StickerPack" (
 );
 
 -- CreateTable
-CREATE TABLE "Sticker" (
+CREATE TABLE IF NOT EXISTS "Sticker" (
     "id" TEXT NOT NULL,
     "pack_id" TEXT NOT NULL,
     "media_url" TEXT NOT NULL,
@@ -118,7 +126,7 @@ CREATE TABLE "Sticker" (
 );
 
 -- CreateTable
-CREATE TABLE "UserChatConfig" (
+CREATE TABLE IF NOT EXISTS "UserChatConfig" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "other_user_id" TEXT NOT NULL,
@@ -130,7 +138,7 @@ CREATE TABLE "UserChatConfig" (
 );
 
 -- CreateTable
-CREATE TABLE "CommunityProduct" (
+CREATE TABLE IF NOT EXISTS "CommunityProduct" (
     "id" TEXT NOT NULL,
     "community_id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -145,61 +153,61 @@ CREATE TABLE "CommunityProduct" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
+CREATE UNIQUE INDEX IF NOT EXISTS "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
 
 -- CreateIndex
-CREATE INDEX "PushSubscription_user_id_idx" ON "PushSubscription"("user_id");
+CREATE INDEX IF NOT EXISTS "PushSubscription_user_id_idx" ON "PushSubscription"("user_id");
 
 -- CreateIndex
-CREATE INDEX "PostView_post_id_idx" ON "PostView"("post_id");
+CREATE INDEX IF NOT EXISTS "PostView_post_id_idx" ON "PostView"("post_id");
 
 -- CreateIndex
-CREATE INDEX "PostView_user_id_idx" ON "PostView"("user_id");
+CREATE INDEX IF NOT EXISTS "PostView_user_id_idx" ON "PostView"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PostView_post_id_user_id_key" ON "PostView"("post_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "PostView_post_id_user_id_key" ON "PostView"("post_id", "user_id");
 
 -- CreateIndex
-CREATE INDEX "ChatFolder_user_id_idx" ON "ChatFolder"("user_id");
+CREATE INDEX IF NOT EXISTS "ChatFolder_user_id_idx" ON "ChatFolder"("user_id");
 
 -- CreateIndex
-CREATE INDEX "ChatDraft_user_id_idx" ON "ChatDraft"("user_id");
+CREATE INDEX IF NOT EXISTS "ChatDraft_user_id_idx" ON "ChatDraft"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ChatDraft_user_id_recipient_id_key" ON "ChatDraft"("user_id", "recipient_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "ChatDraft_user_id_recipient_id_key" ON "ChatDraft"("user_id", "recipient_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Poll_message_id_key" ON "Poll"("message_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Poll_message_id_key" ON "Poll"("message_id");
 
 -- CreateIndex
-CREATE INDEX "PollVote_poll_id_idx" ON "PollVote"("poll_id");
+CREATE INDEX IF NOT EXISTS "PollVote_poll_id_idx" ON "PollVote"("poll_id");
 
 -- CreateIndex
-CREATE INDEX "PollVote_user_id_idx" ON "PollVote"("user_id");
+CREATE INDEX IF NOT EXISTS "PollVote_user_id_idx" ON "PollVote"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PollVote_poll_id_user_id_option_id_key" ON "PollVote"("poll_id", "user_id", "option_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "PollVote_poll_id_user_id_option_id_key" ON "PollVote"("poll_id", "user_id", "option_id");
 
 -- CreateIndex
-CREATE INDEX "Sticker_pack_id_idx" ON "Sticker"("pack_id");
+CREATE INDEX IF NOT EXISTS "Sticker_pack_id_idx" ON "Sticker"("pack_id");
 
 -- CreateIndex
-CREATE INDEX "UserChatConfig_user_id_idx" ON "UserChatConfig"("user_id");
+CREATE INDEX IF NOT EXISTS "UserChatConfig_user_id_idx" ON "UserChatConfig"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "UserChatConfig_user_id_other_user_id_key" ON "UserChatConfig"("user_id", "other_user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "UserChatConfig_user_id_other_user_id_key" ON "UserChatConfig"("user_id", "other_user_id");
 
 -- CreateIndex
-CREATE INDEX "CommunityProduct_community_id_idx" ON "CommunityProduct"("community_id");
+CREATE INDEX IF NOT EXISTS "CommunityProduct_community_id_idx" ON "CommunityProduct"("community_id");
 
 -- CreateIndex
-CREATE INDEX "Community_category_idx" ON "Community"("category");
+CREATE INDEX IF NOT EXISTS "Community_category_idx" ON "Community"("category");
 
 -- CreateIndex
-CREATE INDEX "Message_album_id_idx" ON "Message"("album_id");
+CREATE INDEX IF NOT EXISTS "Message_album_id_idx" ON "Message"("album_id");
 
 -- CreateIndex
-CREATE INDEX "Post_original_post_id_idx" ON "Post"("original_post_id");
+CREATE INDEX IF NOT EXISTS "Post_original_post_id_idx" ON "Post"("original_post_id");
 
 -- AddForeignKey
 ALTER TABLE "PushSubscription" ADD CONSTRAINT "PushSubscription_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE "CommunityProduct" ADD COLUMN     "category" TEXT;
+ALTER TABLE "CommunityProduct" ADD COLUMN IF NOT EXISTS "category" TEXT;
 
 -- CreateIndex
-CREATE INDEX "CommunityProduct_category_idx" ON "CommunityProduct"("category");
+CREATE INDEX IF NOT EXISTS "CommunityProduct_category_idx" ON "CommunityProduct"("category");

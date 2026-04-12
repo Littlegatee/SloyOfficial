@@ -2,10 +2,10 @@
 CREATE TYPE "ReportStatus" AS ENUM ('PENDING', 'RESOLVED', 'DISMISSED');
 
 -- AlterTable
-ALTER TABLE "Post" ADD COLUMN     "thumbnail_url" TEXT;
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "thumbnail_url" TEXT;
 
 -- CreateTable
-CREATE TABLE "PostDraft" (
+CREATE TABLE IF NOT EXISTS "PostDraft" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "content_text" TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE "PostDraft" (
 );
 
 -- CreateTable
-CREATE TABLE "PostReport" (
+CREATE TABLE IF NOT EXISTS "PostReport" (
     "id" TEXT NOT NULL,
     "post_id" TEXT NOT NULL,
     "reporter_id" TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE "PostReport" (
 );
 
 -- CreateTable
-CREATE TABLE "CommunityAuditLog" (
+CREATE TABLE IF NOT EXISTS "CommunityAuditLog" (
     "id" TEXT NOT NULL,
     "community_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -45,19 +45,19 @@ CREATE TABLE "CommunityAuditLog" (
 );
 
 -- CreateIndex
-CREATE INDEX "PostDraft_user_id_idx" ON "PostDraft"("user_id");
+CREATE INDEX IF NOT EXISTS "PostDraft_user_id_idx" ON "PostDraft"("user_id");
 
 -- CreateIndex
-CREATE INDEX "PostReport_post_id_idx" ON "PostReport"("post_id");
+CREATE INDEX IF NOT EXISTS "PostReport_post_id_idx" ON "PostReport"("post_id");
 
 -- CreateIndex
-CREATE INDEX "PostReport_reporter_id_idx" ON "PostReport"("reporter_id");
+CREATE INDEX IF NOT EXISTS "PostReport_reporter_id_idx" ON "PostReport"("reporter_id");
 
 -- CreateIndex
-CREATE INDEX "CommunityAuditLog_community_id_idx" ON "CommunityAuditLog"("community_id");
+CREATE INDEX IF NOT EXISTS "CommunityAuditLog_community_id_idx" ON "CommunityAuditLog"("community_id");
 
 -- CreateIndex
-CREATE INDEX "CommunityAuditLog_user_id_idx" ON "CommunityAuditLog"("user_id");
+CREATE INDEX IF NOT EXISTS "CommunityAuditLog_user_id_idx" ON "CommunityAuditLog"("user_id");
 
 -- AddForeignKey
 ALTER TABLE "PostDraft" ADD CONSTRAINT "PostDraft_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

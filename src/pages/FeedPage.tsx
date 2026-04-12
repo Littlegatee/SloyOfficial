@@ -1096,9 +1096,10 @@ export default function FeedPage() {
             ))
           )}
         </div>
+      </div>
 
-        {/* Sidebar Trends */}
-        <aside className="lg:col-span-4 space-y-6 hidden lg:block">
+      {/* Sidebar Trends */}
+      <aside className="lg:col-span-4 space-y-6 hidden lg:block">
           <div className="glass p-6 rounded-3xl sticky top-24">
             <h3 className="text-lg font-black mb-4 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-primary" />

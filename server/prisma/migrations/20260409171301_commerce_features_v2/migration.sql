@@ -9,12 +9,26 @@ CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED
 -- the enum.
 
 
-ALTER TYPE "CommunityRole" ADD VALUE 'PRODUCT_EDITOR';
-ALTER TYPE "CommunityRole" ADD VALUE 'CHAT_MODERATOR';
-ALTER TYPE "CommunityRole" ADD VALUE 'ANALYST';
+DO $$ BEGIN
+    ALTER TYPE "CommunityRole" ADD VALUE 'PRODUCT_EDITOR';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TYPE "CommunityRole" ADD VALUE 'CHAT_MODERATOR';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    ALTER TYPE "CommunityRole" ADD VALUE 'ANALYST';
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- CreateTable
-CREATE TABLE "CommunityRating" (
+CREATE TABLE IF NOT EXISTS "CommunityRating" (
     "id" TEXT NOT NULL,
     "community_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -26,7 +40,7 @@ CREATE TABLE "CommunityRating" (
 );
 
 -- CreateTable
-CREATE TABLE "ProductReview" (
+CREATE TABLE IF NOT EXISTS "ProductReview" (
     "id" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
@@ -38,7 +52,7 @@ CREATE TABLE "ProductReview" (
 );
 
 -- CreateTable
-CREATE TABLE "Order" (
+CREATE TABLE IF NOT EXISTS "Order" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "community_id" TEXT NOT NULL,
@@ -56,25 +70,25 @@ CREATE TABLE "Order" (
 );
 
 -- CreateIndex
-CREATE INDEX "CommunityRating_community_id_idx" ON "CommunityRating"("community_id");
+CREATE INDEX IF NOT EXISTS "CommunityRating_community_id_idx" ON "CommunityRating"("community_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "CommunityRating_community_id_user_id_key" ON "CommunityRating"("community_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "CommunityRating_community_id_user_id_key" ON "CommunityRating"("community_id", "user_id");
 
 -- CreateIndex
-CREATE INDEX "ProductReview_product_id_idx" ON "ProductReview"("product_id");
+CREATE INDEX IF NOT EXISTS "ProductReview_product_id_idx" ON "ProductReview"("product_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ProductReview_product_id_user_id_key" ON "ProductReview"("product_id", "user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "ProductReview_product_id_user_id_key" ON "ProductReview"("product_id", "user_id");
 
 -- CreateIndex
-CREATE INDEX "Order_user_id_idx" ON "Order"("user_id");
+CREATE INDEX IF NOT EXISTS "Order_user_id_idx" ON "Order"("user_id");
 
 -- CreateIndex
-CREATE INDEX "Order_community_id_idx" ON "Order"("community_id");
+CREATE INDEX IF NOT EXISTS "Order_community_id_idx" ON "Order"("community_id");
 
 -- CreateIndex
-CREATE INDEX "Order_product_id_idx" ON "Order"("product_id");
+CREATE INDEX IF NOT EXISTS "Order_product_id_idx" ON "Order"("product_id");
 
 -- AddForeignKey
 ALTER TABLE "CommunityRating" ADD CONSTRAINT "CommunityRating_community_id_fkey" FOREIGN KEY ("community_id") REFERENCES "Community"("id") ON DELETE CASCADE ON UPDATE CASCADE;
