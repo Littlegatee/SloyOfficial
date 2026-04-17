@@ -2142,16 +2142,16 @@ export default function MessagesPage() {
       }
       if (msg.message_type === 'VIDEO_CIRCLE') {
         return (
-          <div className="w-48 h-48 sm:w-60 sm:h-60 rounded-full overflow-hidden border-2 border-white/20 bg-black/40 shadow-xl relative group/circle">
+          <div className="w-48 h-48 sm:w-60 sm:h-60 rounded-full overflow-hidden border-2 border-white/20 bg-black/40 shadow-xl relative group/circle mask-circle">
             <video 
               src={msg.media_url!} 
-              className="w-full h-full object-cover scale-[1.02]" 
+              className="w-full h-full object-cover" 
               autoPlay 
               loop 
               muted 
               playsInline 
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/10 pointer-events-none" />
           </div>
         );
       }
@@ -2275,8 +2275,26 @@ export default function MessagesPage() {
 
             {isFirstInAlbum ? <PhotoGallery messages={albumMessages} /> : renderMessageContent()}
 
+            <div className={`flex items-center gap-1 mt-1 justify-end ${
+              msg.message_type === 'STICKER' || (msg.message_type === 'MEDIA' && !msg.album_id) || msg.message_type === 'VIDEO_CIRCLE' 
+              ? 'absolute bottom-2 right-4 bg-black/40 px-1.5 py-0.5 rounded-full backdrop-blur-md border border-white/10 z-20' 
+              : ''
+            }`}>
+              {msg.is_edited && <span className="text-[10px] opacity-60 mr-0.5">изм.</span>}
+              <span className="text-[10px] font-medium opacity-80">{timeString}</span>
+              {isMine && (
+                msg.is_read ? (
+                  <CheckCheck className={`w-3.5 h-3.5 ${msg.message_type !== 'TEXT' ? 'text-blue-300' : 'text-white'}`} />
+                ) : (
+                  <Check className={`w-3 h-3 ${msg.message_type !== 'TEXT' ? 'text-white' : 'text-white/80'}`} />
+                )
+              )}
+            </div>
+
             {!!(msg.reactions?.length) && (
-              <div className={`flex flex-wrap gap-1 mt-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex flex-wrap gap-1 mt-2 ${isMine ? 'justify-end' : 'justify-start'} ${
+                msg.message_type === 'VIDEO_CIRCLE' ? 'absolute -bottom-4 z-30' : ''
+              }`}>
                 {Object.entries(
                   (msg.reactions || []).reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
                     const prev = acc[r.emoji] || { count: 0, mine: false };
@@ -2302,22 +2320,6 @@ export default function MessagesPage() {
                 ))}
               </div>
             )}
-            
-            <div className={`flex items-center gap-1 mt-1 justify-end ${
-              msg.message_type === 'STICKER' || (msg.message_type === 'MEDIA' && !msg.album_id) || msg.message_type === 'VIDEO_CIRCLE' 
-              ? 'absolute bottom-2 right-4 bg-black/40 px-1.5 py-0.5 rounded-full backdrop-blur-md border border-white/10' 
-              : ''
-            }`}>
-              {msg.is_edited && <span className="text-[10px] opacity-60 mr-0.5">изм.</span>}
-              <span className="text-[10px] font-medium opacity-80">{timeString}</span>
-              {isMine && (
-                msg.is_read ? (
-                  <CheckCheck className={`w-3.5 h-3.5 ${msg.message_type !== 'TEXT' ? 'text-blue-300' : 'text-white'}`} />
-                ) : (
-                  <Check className={`w-3 h-3 ${msg.message_type !== 'TEXT' ? 'text-white' : 'text-white/80'}`} />
-                )
-              )}
-            </div>
           </div>
           
           <div 

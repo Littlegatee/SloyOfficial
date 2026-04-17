@@ -534,7 +534,7 @@ router.post('/', authenticateToken, async (req: any, res) => {
         select: { first_name: true },
       });
       await notifyUserByPush(recipient_id, {
-        title: senderProfile?.first_name || "Новое сообщение",
+        title: senderProfile?.first_name || "Новое сообщение", 
         body: content_text || "Новое сообщение в Sloy",
         url: `/messages?userId=${sender_id}`,
         tag: `chat:${sender_id}`,

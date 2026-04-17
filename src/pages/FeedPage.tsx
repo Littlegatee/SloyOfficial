@@ -907,7 +907,7 @@ export default function FeedPage() {
                 </div>
 
                 <div className="px-4 pb-2">
-                  <p className="text-sm whitespace-pre-wrap">
+                  <p className="text-sm whitespace-pre-wrap relative z-10">
                     {post.content_text.split(/(\s+)/).map((word, i) => 
                       word.startsWith('#') ? (
                         <span key={i} className="text-primary hover:underline cursor-pointer">{word}</span>
